@@ -10,9 +10,10 @@ import {
   Tooltip,
   VStack,
 } from "@chakra-ui/react";
-import { RepeatIcon } from "@chakra-ui/icons";
+import { DownloadIcon, RepeatIcon } from "@chakra-ui/icons";
 import type { ManifestVersion, LatestVersions } from "../types/version";
 import { useVersionManifest } from "../hooks/useVersionManifest";
+import { useVersionDownload } from "../hooks/useVersionDownload";
 
 /** 把版本按 正式版/快照版 分组,并按发布时间倒序 */
 function groupVersions(versions: ManifestVersion[]) {
@@ -42,6 +43,7 @@ function VersionCard({
   isLatest: boolean;
 }) {
   const isRelease = version.type === "release";
+  const { state, download } = useVersionDownload(version.id, version.url);
   return (
     <Flex
       align="center"
@@ -95,6 +97,19 @@ function VersionCard({
         </Text>
       </Box>
 
+      <Button
+        size="sm"
+        leftIcon={<DownloadIcon />}
+        onClick={download}
+        isLoading={state.status === "downloading"}
+        colorScheme={state.status === "done" ? "grass" : undefined}
+        variant={state.status === "done" ? "outline" : "solid"}
+      >
+        {state.status === "idle" && "下载"}
+        {state.status === "downloading" && "下载中"}
+        {state.status === "done" && "已下载"}
+        {state.status === "error" && "重试"}
+      </Button>
       <Tooltip label="启动功能将在后续里程碑实现" placement="top">
         <Box as="span">
           <Button size="sm" isDisabled>
