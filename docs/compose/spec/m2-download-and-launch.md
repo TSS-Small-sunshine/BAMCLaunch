@@ -10,6 +10,16 @@ commits: <base-sha>..<head-sha> # filled at delivery
 
 ## Report
 
+**L1:下载版本 JSON(2026-08-18 完成)**
+
+- 前端:每张版本卡新增「下载」按钮(`useVersionDownload` 状态机 idle/downloading/done/error),完成后按钮 Tooltip 显示保存路径
+- 后端:新增 `download_version_json` 命令;HTTP 客户端提取为共享 `http_client()`(DRY,M1 的 version.rs 一并复用)
+- 游戏目录 = 便携模式(exe 旁 `.bamcl-dev`),回归测试 `game_dir_is_anchored_to_executable` 锁定行为(`cargo test` 首个测试)
+
+**Verification** — `cargo test` 1 passed / `cargo check` ok / `npm run build` ✓(前端与 Rust 均通过);`tauri dev` 手动验收:点击下载→文件落在 exe 同目录(开发期 `target/debug/.bamcl-dev/versions/<id>/<id>.json`)→Tooltip 显示绝对路径
+
+**Journey log** — 相对路径 bug(2026-08-18):`tauri dev` 下 Rust 进程 cwd=`src-tauri/`,`.bamcl-dev` 落到 src-tauri 下而非项目根;用户提出"便携版在 exe 目录生成 .minecraft"的正确观察 → 改用 `current_exe()` 锚定 + TDD 红绿循环写回归测试。经验:持久化路径绝不依赖进程 cwd。
+
 ## [S1] Problem
 
 M1(Mojang 版本清单)已上线,但用户只能"看列表",不能下载、不能启动。M2 的目标是打通"下载 → 启动"链路,并保持教学优先:每一步拆成独立小课(L1~L6),每课一个可验证的小功能。
@@ -71,7 +81,7 @@ React(VersionCard 内 useVersionDownload hook)
 
 ## Tasks
 
-- [ ] T-L1: 下载版本 JSON 全链路(设计见 [S2]/L1)—— acceptance: `npm run build` 与 `cargo check` 通过;`tauri dev` 中点「下载」后 `.bamcl-dev/versions/<id>/<id>.json` 真实落盘,按钮状态正确切换 (covers: S2)
+- [x] T-L1: 下载版本 JSON 全链路(设计见 [S2]/L1)—— acceptance: `npm run build` 与 `cargo check` 通过;`tauri dev` 中点「下载」后 `.bamcl-dev/versions/<id>/<id>.json` 真实落盘,按钮状态正确切换 (covers: S2)
 - [ ] T-L2: client.jar 下载 + sha1 校验 (covers: S2)
 - [ ] T-L3: assets 资源下载 (covers: S2)
 - [ ] T-L4: libraries + natives (covers: S2)
