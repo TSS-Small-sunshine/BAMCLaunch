@@ -16,6 +16,9 @@ dist-ssr
 .mimocode/
 .worktrees/
 
+# 本地游戏目录(dev)
+.bamcl-dev/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
