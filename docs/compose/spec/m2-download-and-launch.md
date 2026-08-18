@@ -65,6 +65,25 @@ React(VersionCard 内 useVersionDownload hook)
 - 每张版本卡新增「下载」按钮(图标 DownloadIcon),「启动」按钮保持禁用(M2-L6 再做)
 - 按钮文案/状态:下载 → 下载中…(loading) → 已下载(绿色 outline)/ 重试(error)
 
+### L2:下载 client.jar + sha1 完整性校验(设计,2026-08-18)
+
+数据流:
+
+```
+VersionCard「客户端」按钮(useVersionJar hook)
+  → invoke("download_version_jar", { versionId })            # 只传 id,Rust 全包
+  → Rust:读本地 <id>.json → serde 解析 downloads.client{sha1,size,url}
+         → reqwest 下载 jar → sha1_hex 本地指纹与官方比对
+         → 一致:写 versions/<id>/client.jar;不一致:Err 且不写盘
+```
+
+契约:
+
+- `download_version_jar(version_id: String) -> Result<String, String>`(复用 http_client / game_dir / id 校验)
+- 本地未先下版本信息 → Err "请先下载该版本的版本信息"
+- 纯逻辑:`fn sha1_hex(&[u8]) -> String`、`fn verify_sha1(&[u8], &str) -> bool`(大小写不敏感) — TDD 已测(官方向量 SHA1("abc")=a9993e36…)
+- UI:每卡「客户端」按钮与「下载」并列,同款三态状态机,完成后 Tooltip 显示路径
+
 ### 后续课(概要,逐课细化)
 
 - L2:下载 client.jar + sha1 完整性校验
@@ -82,7 +101,7 @@ React(VersionCard 内 useVersionDownload hook)
 ## Tasks
 
 - [x] T-L1: 下载版本 JSON 全链路(设计见 [S2]/L1)—— acceptance: `npm run build` 与 `cargo check` 通过;`tauri dev` 中点「下载」后 `.bamcl-dev/versions/<id>/<id>.json` 真实落盘,按钮状态正确切换 (covers: S2)
-- [ ] T-L2: client.jar 下载 + sha1 校验 (covers: S2)
+- [ ] T-L2: client.jar 下载 + sha1 校验 —— acceptance: `cargo test` 全绿(sha1/verify/解析 3 测试);`npm run build` 通过;`tauri dev` 点「客户端」后 `versions/<id>/client.jar` 落盘(≈37MB 真实数据),按钮状态正确;篡改说明书中的 sha1 后点下载应报"校验失败" (covers: S2)
 - [ ] T-L3: assets 资源下载 (covers: S2)
 - [ ] T-L4: libraries + natives (covers: S2)
 - [ ] T-L5: Java 发现 (covers: S2)
