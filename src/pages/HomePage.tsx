@@ -135,15 +135,20 @@ function VersionCard({
           </Button>
         </Tooltip>
       ) : (
-        <Button
-          size="sm"
-          onClick={jar.download}
-          isLoading={jar.state.status === "downloading"}
+        <Tooltip
+          label={jar.state.status === "error" ? jar.state.message : "下载客户端 jar"}
+          placement="top"
         >
-          {jar.state.status === "idle" && "客户端"}
-          {jar.state.status === "downloading" && "下载中"}
-          {jar.state.status === "error" && "重试"}
-        </Button>
+          <Button
+            size="sm"
+            onClick={jar.download}
+            isLoading={jar.state.status === "downloading"}
+          >
+            {jar.state.status === "idle" && "客户端"}
+            {jar.state.status === "downloading" && "下载中"}
+            {jar.state.status === "error" && "重试"}
+          </Button>
+        </Tooltip>
       )}
       <Tooltip label="启动功能将在后续里程碑实现" placement="top">
         <Box as="span">
