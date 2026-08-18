@@ -6,7 +6,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             commands::version::fetch_version_manifest,
-            commands::download::download_version_json
+            commands::download::download_version_json,
+            commands::download::download_version_jar
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
