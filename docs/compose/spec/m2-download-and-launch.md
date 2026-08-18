@@ -20,6 +20,16 @@ commits: <base-sha>..<head-sha> # filled at delivery
 
 **Journey log** — 相对路径 bug(2026-08-18):`tauri dev` 下 Rust 进程 cwd=`src-tauri/`,`.bamcl-dev` 落到 src-tauri 下而非项目根;用户提出"便携版在 exe 目录生成 .minecraft"的正确观察 → 改用 `current_exe()` 锚定 + TDD 红绿循环写回归测试。经验:持久化路径绝不依赖进程 cwd。
 
+**L2:下载 client.jar + sha1 校验(2026-08-18 完成)**
+
+- 后端:`download_version_jar(version_id)` 一步到位——读本地说明书 → serde 解析 `downloads.client{sha1,url}` → 下载 jar → `sha1_hex` 与官方指纹比对 → 不一致报错**不写盘**,一致落盘 `versions/<id>/client.jar`
+- 依赖 `sha1 = "0.10"`;纯函数 `sha1_hex` / `verify_sha1` 均 TDD 先行
+- 前端:每卡「客户端」按钮(`useVersionJar` 同款状态机),与「下载」并列;完成 Tooltip 显示路径
+
+**Verification(L2)** — `cargo test` 4 passed(sha1 官方向量 / verify 匹配与不匹配 / JSON 解析)/ `cargo check` ok / `npm run build` ✓ / `tauri dev` 手动:26.2 client.jar 落盘且大小 39,193,383 与说明书一致
+
+**Journey log(L2)** — serde 默认忽略未知字段:结构体只声明用到的字段,JSON 里多余字段(如 size/server)不声明也不会报错,保持解析最小化;`sha1` crate 的 `format!("{:x}", digest)` 直接输出 hex,无需额外 hex 库。
+
 ## [S1] Problem
 
 M1(Mojang 版本清单)已上线,但用户只能"看列表",不能下载、不能启动。M2 的目标是打通"下载 → 启动"链路,并保持教学优先:每一步拆成独立小课(L1~L6),每课一个可验证的小功能。
@@ -101,7 +111,7 @@ VersionCard「客户端」按钮(useVersionJar hook)
 ## Tasks
 
 - [x] T-L1: 下载版本 JSON 全链路(设计见 [S2]/L1)—— acceptance: `npm run build` 与 `cargo check` 通过;`tauri dev` 中点「下载」后 `.bamcl-dev/versions/<id>/<id>.json` 真实落盘,按钮状态正确切换 (covers: S2)
-- [ ] T-L2: client.jar 下载 + sha1 校验 —— acceptance: `cargo test` 全绿(sha1/verify/解析 3 测试);`npm run build` 通过;`tauri dev` 点「客户端」后 `versions/<id>/client.jar` 落盘(≈37MB 真实数据),按钮状态正确;篡改说明书中的 sha1 后点下载应报"校验失败" (covers: S2)
+- [x] T-L2: client.jar 下载 + sha1 校验 —— acceptance: `cargo test` 全绿(sha1/verify/解析 3 测试);`npm run build` 通过;`tauri dev` 点「客户端」后 `versions/<id>/client.jar` 落盘(≈37MB 真实数据),按钮状态正确;篡改说明书中的 sha1 后点下载应报"校验失败" (covers: S2)
 - [ ] T-L3: assets 资源下载 (covers: S2)
 - [ ] T-L4: libraries + natives (covers: S2)
 - [ ] T-L5: Java 发现 (covers: S2)
