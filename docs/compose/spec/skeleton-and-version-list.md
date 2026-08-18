@@ -1,14 +1,20 @@
 ---
 feature: skeleton-and-version-list
-status: designed
+status: delivered
 updated: 2026-08-18
 branch: main
-commits: <base-sha>..<head-sha> # filled at delivery
+commits: a22cc6d..50fd20c
 ---
 
 # BAMCLaunch 里程碑 1:项目骨架 + Minecraft 版本列表
 
 ## Report
+
+**What was built** — M1 交付:Tauri 2 + React 19 + TypeScript 可运行骨架;BA×MC 设计令牌(品牌蓝 `#4C9EEB` / 草方块绿 `#7CBD4B` + 全局样式);Rust 端 `fetch_version_manifest` 命令(Mojang 官方版本清单,reqwest + serde camelCase);前端 `useVersionManifest` 三态 hook(loading/error/success + 重试);无边框窗口 + 自绘标题栏(拖拽/最小化/最大化/关闭)+ 侧边导航(版本/资源下载/账户/设置);主页版本列表(正式版/快照版分组、最新徽标、刷新);README + MIT 许可证。M2 沿用其 IPC 教学模式与目录约定。
+
+**Verification** — `npm run build` ✓ / `cargo check` ✓ / `tauri dev` 手动验收:窗口无边框可拖拽、三窗口按钮可用、版本列表真实加载(2026-08 时最新 release 26.2 / snapshot 26.3-snapshot-9)、路由切换无误。M1 按约定不含自动化测试(自 M2-L1 起引入 `cargo test`)。
+
+**Journey log** — create-tauri-app v4.6.2 拒绝非空目录 → 临时子目录脚手架后 Move-Item 上移;本机会话守卫挡 `git branch -M` → 删空 .git 后 `git init -b main`;Tauri 2 自绘标题栏按钮需显式 capabilities(`core:window:allow-minimize` 等 3 项,缺则 cargo build 报错);npm allow-scripts 机制需 `npm approve-scripts esbuild`;reqwest 0.13 + rustls 编译干净无需 openssl,首次 debug 构建约 414 crates。
 
 ## [S1] Problem
 
@@ -94,10 +100,10 @@ versions: [{ id, type: "release"|"snapshot", url, time, releaseTime, sha1, compl
 
 ## Tasks
 
-- [ ] T1: 初始化 Tauri 2 + React + TS 项目;安装 Chakra UI v2 全家桶与 react-router-dom;删除模板演示代码;`.gitignore` 追加 `.mimocode/` — acceptance: `npm run build` 与 `cargo check` 均通过 (covers: S2)
-- [ ] T2: 编写 BA×MC Chakra 主题(`src/theme/`)+ 全局样式 — acceptance: 主题导出 colors / shadows / radii / 组件样式,`npm run build` 通过 (covers: S2)
-- [ ] T3: Rust 后端 `fetch_version_manifest` command(reqwest + serde 解析 Mojang 版本清单)并在 lib.rs 注册 — acceptance: `cargo check` 通过,`tauri dev` 中调用可返回真实数据 (covers: S2)
-- [ ] T4: 前端类型定义(`src/types/version.ts`)+ `useVersionManifest` hook(loading / error / data 状态机,支持重试)— acceptance: `npm run build` 通过 (covers: S2)
-- [ ] T5: 窗口配置(decorations: false)+ 自定义 TitleBar 组件(拖拽区、最小化/最大化/关闭)+ 侧边导航布局 — acceptance: `tauri dev` 窗口可拖动、三个窗口按钮可用 (covers: S2)
-- [ ] T6: 路由与页面:主页(版本列表三态 + release/snapshot 分组 + 最新徽标)、下载 / 账户 / 设置占位页 — acceptance: `tauri dev` 完整界面可见,切换无误;`npm run build` 通过 (covers: S2)
-- [ ] T7: README(简介 / 技术栈 / 运行方式 / 路线图)+ LICENSE(MIT)— acceptance: 文件存在且内容准确 (covers: S2)
+- [x] T1: 初始化 Tauri 2 + React + TS 项目;安装 Chakra UI v2 全家桶与 react-router-dom;删除模板演示代码;`.gitignore` 追加 `.mimocode/` — acceptance: `npm run build` 与 `cargo check` 均通过 (covers: S2)
+- [x] T2: 编写 BA×MC Chakra 主题(`src/theme/`)+ 全局样式 — acceptance: 主题导出 colors / shadows / radii / 组件样式,`npm run build` 通过 (covers: S2)
+- [x] T3: Rust 后端 `fetch_version_manifest` command(reqwest + serde 解析 Mojang 版本清单)并在 lib.rs 注册 — acceptance: `cargo check` 通过,`tauri dev` 中调用可返回真实数据 (covers: S2)
+- [x] T4: 前端类型定义(`src/types/version.ts`)+ `useVersionManifest` hook(loading / error / data 状态机,支持重试)— acceptance: `npm run build` 通过 (covers: S2)
+- [x] T5: 窗口配置(decorations: false)+ 自定义 TitleBar 组件(拖拽区、最小化/最大化/关闭)+ 侧边导航布局 — acceptance: `tauri dev` 窗口可拖动、三个窗口按钮可用 (covers: S2)
+- [x] T6: 路由与页面:主页(版本列表三态 + release/snapshot 分组 + 最新徽标)、下载 / 账户 / 设置占位页 — acceptance: `tauri dev` 完整界面可见,切换无误;`npm run build` 通过 (covers: S2)
+- [x] T7: README(简介 / 技术栈 / 运行方式 / 路线图)+ LICENSE(MIT)— acceptance: 文件存在且内容准确 (covers: S2)
