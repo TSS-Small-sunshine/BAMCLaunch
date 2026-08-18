@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use super::http_client;
+
 /// Mojang 官方版本清单(version manifest v2)—— 所有启动器的版本列表都来自这里
 const VERSION_MANIFEST_URL: &str = "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json";
 
@@ -37,11 +39,7 @@ pub struct VersionManifest {
 /// 拉取 Minecraft 版本清单。前端通过 invoke("fetch_version_manifest") 调用。
 #[tauri::command]
 pub async fn fetch_version_manifest() -> Result<VersionManifest, String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(20))
-        .user_agent("BAMCLaunch/0.1.0")
-        .build()
-        .map_err(|e| format!("创建 HTTP 客户端失败: {e}"))?;
+    let client = http_client()?;
 
     let manifest: VersionManifest = client
         .get(VERSION_MANIFEST_URL)
