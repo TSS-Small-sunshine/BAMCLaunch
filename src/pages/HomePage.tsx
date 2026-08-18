@@ -14,6 +14,7 @@ import { DownloadIcon, RepeatIcon } from "@chakra-ui/icons";
 import type { ManifestVersion, LatestVersions } from "../types/version";
 import { useVersionManifest } from "../hooks/useVersionManifest";
 import { useVersionDownload } from "../hooks/useVersionDownload";
+import { useVersionJar } from "../hooks/useVersionJar";
 
 /** 把版本按 正式版/快照版 分组,并按发布时间倒序 */
 function groupVersions(versions: ManifestVersion[]) {
@@ -44,6 +45,7 @@ function VersionCard({
 }) {
   const isRelease = version.type === "release";
   const { state, download } = useVersionDownload(version.id, version.url);
+  const jar = useVersionJar(version.id);
   return (
     <Flex
       align="center"
@@ -119,6 +121,28 @@ function VersionCard({
           {state.status === "idle" && "下载"}
           {state.status === "downloading" && "下载中"}
           {state.status === "error" && "重试"}
+        </Button>
+      )}
+      {jar.state.status === "done" ? (
+        <Tooltip label={`已保存: ${jar.state.path}`} placement="top">
+          <Button
+            size="sm"
+            colorScheme="grass"
+            variant="outline"
+            onClick={jar.download}
+          >
+            客户端
+          </Button>
+        </Tooltip>
+      ) : (
+        <Button
+          size="sm"
+          onClick={jar.download}
+          isLoading={jar.state.status === "downloading"}
+        >
+          {jar.state.status === "idle" && "客户端"}
+          {jar.state.status === "downloading" && "下载中"}
+          {jar.state.status === "error" && "重试"}
         </Button>
       )}
       <Tooltip label="启动功能将在后续里程碑实现" placement="top">

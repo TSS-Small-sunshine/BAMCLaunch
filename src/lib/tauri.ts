@@ -10,3 +10,8 @@ export function fetchVersionManifest(): Promise<VersionManifest> {
 export function downloadVersionJson(versionId: string, url: string): Promise<string> {
   return invoke<string>("download_version_json", { versionId, url });
 }
+
+/** 下载并校验该版本的 client.jar,返回保存路径 */
+export function downloadVersionJar(versionId: string): Promise<string> {
+  return invoke<string>("download_version_jar", { versionId });
+}
