@@ -1,0 +1,35 @@
+/* BAMCLaunch 全局样式 —— BA 风格浅蓝渐变背景 + 细滚动条 */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: linear-gradient(180deg, #eaf4ff 0%, #f6faff 45%, #ffffff 100%);
+  color: #2d3748;
+  user-select: none; /* 桌面应用惯例:避免误选中文字 */
+  overflow: hidden;
+}
+
+input,
+textarea {
+  user-select: text;
+}
+
+/* BA 风格细滚动条 */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(76, 158, 235, 0.35);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(76, 158, 235, 0.55);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
