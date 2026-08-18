@@ -97,19 +97,30 @@ function VersionCard({
         </Text>
       </Box>
 
-      <Button
-        size="sm"
-        leftIcon={<DownloadIcon />}
-        onClick={download}
-        isLoading={state.status === "downloading"}
-        colorScheme={state.status === "done" ? "grass" : undefined}
-        variant={state.status === "done" ? "outline" : "solid"}
-      >
-        {state.status === "idle" && "下载"}
-        {state.status === "downloading" && "下载中"}
-        {state.status === "done" && "已下载"}
-        {state.status === "error" && "重试"}
-      </Button>
+      {state.status === "done" ? (
+        <Tooltip label={`已保存: ${state.path}`} placement="top">
+          <Button
+            size="sm"
+            leftIcon={<DownloadIcon />}
+            onClick={download}
+            colorScheme="grass"
+            variant="outline"
+          >
+            已下载
+          </Button>
+        </Tooltip>
+      ) : (
+        <Button
+          size="sm"
+          leftIcon={<DownloadIcon />}
+          onClick={download}
+          isLoading={state.status === "downloading"}
+        >
+          {state.status === "idle" && "下载"}
+          {state.status === "downloading" && "下载中"}
+          {state.status === "error" && "重试"}
+        </Button>
+      )}
       <Tooltip label="启动功能将在后续里程碑实现" placement="top">
         <Box as="span">
           <Button size="sm" isDisabled>

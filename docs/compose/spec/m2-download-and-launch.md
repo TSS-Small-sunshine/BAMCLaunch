@@ -18,9 +18,12 @@ M1(Mojang 版本清单)已上线,但用户只能"看列表",不能下载、不�
 
 ## [S2] Design
 
-### 游戏目录(L1 决定)
+### 游戏目录(L1 决定,2026-08-18 修正为便携模式)
 
-- 开发期根目录:`<项目根>/.bamcl-dev/`(方便查看文件;需 gitignore)
+- **便携模式**:游戏数据放在**可执行文件(exe)所在目录**下的 `.bamcl-dev/`(PCL/HMCL 便携版同思路),与当前工作目录无关
+  - 开发期:`src-tauri/target/debug/.bamcl-dev`(exe 在 target/debug 下)
+  - 发布后:exe 旁边自动出现 `.bamcl-dev`,整个文件夹可拷贝带走
+  - 修正原因:`tauri dev` 启动时 Rust 进程 cwd=`src-tauri/`,相对路径落到非预期位置;打包后 cwd 更不可控。已加回归测试 `game_dir_is_anchored_to_executable`
 - 布局镜像真实启动器(`.minecraft` 结构):
   ```
   .bamcl-dev/
