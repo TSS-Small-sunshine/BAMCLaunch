@@ -145,9 +145,49 @@ VersionCard「资源」按钮(useVersionAssets hook)
 
 UI:每卡「资源」按钮与「客户端」并列,同款三态状态机,完成 Tooltip 显示"新增 N/M,跳过 K";错误 Tooltip 显示具体原因。
 
+### L4:libraries 下载 + natives 解压(设计,2026-08-19)
+
+Minecraft 的 libraries = 第三方运行库(压缩 lz4、OpenGL 绑定 LWJGL、原生 .dll…),全部由 Mojang 库托管(`libraries.minecraft.net`)。26.2 实查:131 项、约 114MB。
+
+教学点 1 — **rules 过滤**:不是所有库里全都要。每项可带 `rules`(数组),26.2 实测全部是 `[{action:"allow", os:{name:"windows"|"linux"|"osx"}}]` 形式(无 arch/disallow 维度)。游戏要跑在哪个平台就只下哪个平台的库,否则把 4 个平台的 native 全拉下来。**现代格式没有老式的 `natives`/`classifiers` 字段** —— natives 就是独立条目 + os 规则过滤(如 `org.lwjgl:lwjgl-glfw:3.4.1:natives-windows`)。
+
+教学点 2 — **natives 解压**:名字含 `natives-windows` 的 jar 是 zip 格式,里面装的是 `.dll`。启动时 Java 要从目录加载这些原生库 → 解压到 `versions/<id>/natives/`。教学点:**zip 路径穿越防护**——解压每个条目前校验目标路径必须仍位于 natives 目录内(拒绝 `..` / 绝对路径),这是真实启动器也会防的任意文件写漏洞。
+
+数据流:
+
+```
+VersionCard「库」按钮(useVersionLibraries hook)
+  → invoke("download_version_libraries", { versionId })        # 只传 id,Rust 全包
+  → Rust:读本地 <id>.json → 解析 libraries[]
+         → rules 按当前 OS 过滤(windows)→ 得到该下的库清单
+         → 遍历:libraries/<path> 已存在 → skip;缺失 → 并发 8 下载(libraries.minecraft.net/<path>)
+         → 每个 jar sha1 校验,不一致 Err 且不写盘(沿用 L2 脏数据不落地)
+         → natives 条目额外步骤:解压 zip 到 versions/<id>/natives/(路径穿越防护)
+  → 返回 { total, downloaded, skipped, natives } → 前端按钮状态机 + Tooltip 统计
+```
+
+契约:
+
+- `download_version_libraries(version_id: String) -> Result<LibrariesSummary, String>`,其中 `LibrariesSummary { total, downloaded, skipped, natives }`(皆 usize,serde Serialize 直传前端)
+- 复用:http_client / game_dir / id 校验 / sha1_hex / verify_sha1 / 并发 8 JoinSet 模式
+- 纯逻辑 TDD:
+  - `fn library_allowed(rules: &[Rule], os_name: &str) -> bool` — 无 rules 默认允许;有 rules 按最后一条匹配规则定夺(`allow`→true);os 不匹配视为不匹配
+  - `fn is_native_library(name: &str) -> bool` — 名字含 `natives-<os>` 标记(教学实现用 `natives-windows`,可参数化)
+  - `fn safe_entry_path(natives_dir: &Path, entry: &str) -> Option<PathBuf>` — 拒绝绝对路径与 `..`
+- 新增依赖:`zip` crate(解压 natives jar)
+- 本地未先下版本信息 → Err "请先下载该版本的版本信息"
+
+布局(教学对照真实启动器):
+
+```
+.bamcl-dev/libraries/<path>            # path 即说明书里的 artifact.path(含三级坐标)
+.bamcl-dev/versions/<id>/natives/      # 解压后的 .dll 等原生库
+```
+
+UI:每卡「库」按钮与「资源」并列,同款三态状态机,完成 Tooltip 显示"库 N/M,跳过 K,原生库 X";错误 Tooltip 显示具体原因。
+
 ### 后续课(概要,逐课细化)
 
-- L4:libraries 解析 + natives 下载与解压
 - L5:Java 自动发现(版本适配 + 路径探测)
 - L6:启动参数拼接 + 进程拉起(离线模式)→ 游戏真跑起来
 
@@ -162,6 +202,6 @@ UI:每卡「资源」按钮与「客户端」并列,同款三态状态机,完成
 - [x] T-L1: 下载版本 JSON 全链路(设计见 [S2]/L1)—— acceptance: `npm run build` 与 `cargo check` 通过;`tauri dev` 中点「下载」后 `.bamcl-dev/versions/<id>/<id>.json` 真实落盘,按钮状态正确切换 (covers: S2)
 - [x] T-L2: client.jar 下载 + sha1 校验 —— acceptance: `cargo test` 全绿(sha1/verify/解析 3 测试);`npm run build` 通过;`tauri dev` 点「客户端」后 `versions/<id>/client.jar` 落盘(≈37MB 真实数据),按钮状态正确;篡改说明书中的 sha1 后点下载应报"校验失败" (covers: S2)
 - [x] T-L3: assets 资源下载 —— acceptance: `cargo test` 全绿(assetIndex 解析 / 内容寻址路径 / verify 复用);`npm run build` 通过;`tauri dev` 点「资源」后 `assets/indexes/32.json` 落盘 + 首次全量下载 5057 文件(479,185,985 B),再点一次 skipped 全量(增量验证);篡改 index 中某文件 hash 后应报错 (covers: S2)
-- [ ] T-L4: libraries + natives (covers: S2)
+- [ ] T-L4: libraries 下载 + natives 解压(rules 过滤 / sha1 校验 / 并发 8 / 路径穿越防护)—— acceptance: `cargo test` 全绿(rules 过滤 / native 识别 / 安全路径 3 测试);`npm run build` 通过;`tauri dev` 点「库」后 `libraries/` 落盘 Windows 所需 jar(~110MB)+ `versions/26.2/natives/` 解压出 .dll;再点一次 skipped 全量;篡改某 jar sha1 后应报错 (covers: S2)
 - [ ] T-L5: Java 发现 (covers: S2)
 - [ ] T-L6: 启动参数 + 进程拉起(离线) (covers: S2)
