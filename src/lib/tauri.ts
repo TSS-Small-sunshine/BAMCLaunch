@@ -21,9 +21,22 @@ export function downloadVersionAssets(versionId: string): Promise<AssetsSummary>
   return invoke<AssetsSummary>("download_version_assets", { versionId });
 }
 
+/** 下载当前平台需要的全部 libraries(运行库),返回下载统计 */
+export function downloadVersionLibraries(versionId: string): Promise<LibrariesSummary> {
+  return invoke<LibrariesSummary>("download_version_libraries", { versionId });
+}
+
 /** download_version_assets 命令的返回统计 */
 export interface AssetsSummary {
   total: number;
   downloaded: number;
   skipped: number;
+}
+
+/** download_version_libraries 命令的返回统计 */
+export interface LibrariesSummary {
+  total: number;
+  downloaded: number;
+  skipped: number;
+  natives: number;
 }

@@ -16,6 +16,7 @@ import { useVersionManifest } from "../hooks/useVersionManifest";
 import { useVersionDownload } from "../hooks/useVersionDownload";
 import { useVersionJar } from "../hooks/useVersionJar";
 import { useVersionAssets } from "../hooks/useVersionAssets";
+import { useVersionLibraries } from "../hooks/useVersionLibraries";
 
 /** 把版本按 正式版/快照版 分组,并按发布时间倒序 */
 function groupVersions(versions: ManifestVersion[]) {
@@ -48,6 +49,7 @@ function VersionCard({
   const { state, download } = useVersionDownload(version.id, version.url);
   const jar = useVersionJar(version.id);
   const assets = useVersionAssets(version.id);
+  const libraries = useVersionLibraries(version.id);
   return (
     <Flex
       align="center"
@@ -183,6 +185,40 @@ function VersionCard({
             {assets.state.status === "idle" && "资源"}
             {assets.state.status === "downloading" && "下载中"}
             {assets.state.status === "error" && "重试"}
+          </Button>
+        </Tooltip>
+      )}
+      {libraries.state.status === "done" ? (
+        <Tooltip
+          label={`库完成: 新增 ${libraries.state.summary.downloaded} / 共 ${libraries.state.summary.total}, 跳过 ${libraries.state.summary.skipped}, 原生库 ${libraries.state.summary.natives}`}
+          placement="top"
+        >
+          <Button
+            size="sm"
+            colorScheme="grass"
+            variant="outline"
+            onClick={libraries.download}
+          >
+            库
+          </Button>
+        </Tooltip>
+      ) : (
+        <Tooltip
+          label={
+            libraries.state.status === "error"
+              ? libraries.state.message
+              : "下载运行库(含 Windows 原生库, 首次较大)"
+          }
+          placement="top"
+        >
+          <Button
+            size="sm"
+            onClick={libraries.download}
+            isLoading={libraries.state.status === "downloading"}
+          >
+            {libraries.state.status === "idle" && "库"}
+            {libraries.state.status === "downloading" && "下载中"}
+            {libraries.state.status === "error" && "重试"}
           </Button>
         </Tooltip>
       )}
