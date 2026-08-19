@@ -7,7 +7,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::version::fetch_version_manifest,
             commands::download::download_version_json,
-            commands::download::download_version_jar
+            commands::download::download_version_jar,
+            commands::download::download_version_assets
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
