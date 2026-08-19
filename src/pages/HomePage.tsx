@@ -15,6 +15,7 @@ import type { ManifestVersion, LatestVersions } from "../types/version";
 import { useVersionManifest } from "../hooks/useVersionManifest";
 import { useVersionDownload } from "../hooks/useVersionDownload";
 import { useVersionJar } from "../hooks/useVersionJar";
+import { useVersionAssets } from "../hooks/useVersionAssets";
 
 /** 把版本按 正式版/快照版 分组,并按发布时间倒序 */
 function groupVersions(versions: ManifestVersion[]) {
@@ -46,6 +47,7 @@ function VersionCard({
   const isRelease = version.type === "release";
   const { state, download } = useVersionDownload(version.id, version.url);
   const jar = useVersionJar(version.id);
+  const assets = useVersionAssets(version.id);
   return (
     <Flex
       align="center"
@@ -147,6 +149,40 @@ function VersionCard({
             {jar.state.status === "idle" && "客户端"}
             {jar.state.status === "downloading" && "下载中"}
             {jar.state.status === "error" && "重试"}
+          </Button>
+        </Tooltip>
+      )}
+      {assets.state.status === "done" ? (
+        <Tooltip
+          label={`资源完成: 新增 ${assets.state.summary.downloaded} / 共 ${assets.state.summary.total}, 跳过 ${assets.state.summary.skipped}`}
+          placement="top"
+        >
+          <Button
+            size="sm"
+            colorScheme="grass"
+            variant="outline"
+            onClick={assets.download}
+          >
+            资源
+          </Button>
+        </Tooltip>
+      ) : (
+        <Tooltip
+          label={
+            assets.state.status === "error"
+              ? assets.state.message
+              : "下载全部资源(音效/语言/字体等, 首次较大)"
+          }
+          placement="top"
+        >
+          <Button
+            size="sm"
+            onClick={assets.download}
+            isLoading={assets.state.status === "downloading"}
+          >
+            {assets.state.status === "idle" && "资源"}
+            {assets.state.status === "downloading" && "下载中"}
+            {assets.state.status === "error" && "重试"}
           </Button>
         </Tooltip>
       )}
