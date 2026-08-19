@@ -30,6 +30,16 @@ commits: <base-sha>..<head-sha> # filled at delivery
 
 **Journey log(L2)** — serde 默认忽略未知字段:结构体只声明用到的字段,JSON 里多余字段(如 size/server)不声明也不会报错,保持解析最小化;`sha1` crate 的 `format!("{:x}", digest)` 直接输出 hex,无需额外 hex 库。
 
+**L3:assets 资源下载(2026-08-18 完成)**
+
+- 后端:`download_version_assets(version_id)` 单命令全链路——读本地说明书 → 取 assetIndex{id,sha1,url} → 下载 index(sha1 校验)→ 解析 objects 清单 → classify 缺失/已有 → **并发 8** 下载(`tokio::task::JoinSet` 分块)→ 每文件 sha1 校验,失败不写盘 → 返回 `AssetsSummary{total, downloaded, skipped}`
+- 内容寻址:`objects/<sha1 前两位>/<完整 sha1>` + CDN `https://resources.download.minecraft.net/<前两位>/<hash>`;纯函数 `asset_object_path` / `asset_download_url` / `classify_objects` 均 TDD
+- 前端:每卡「资源」按钮(useVersionAssets 同款状态机),完成 Tooltip 显示统计"新增 N/共 M, 跳过 K",错误 Tooltip 显示详情
+
+**Verification(L3)** — `cargo test` 8 passed(新增 4:assetIndex 解析 / 内容寻址路径 / CDN URL / 跳过已有分类)/ `cargo check` ok / `npm run build` ✓ / `tauri dev` 手动:点 26.2「资源」→ `assets/indexes/32.json` 586,366 B 落盘 + `assets/objects/` 5057 文件、总计 479,185,985 B —— 与 index 声明 5057 及官方 totalSize 完全一致(全量通过 sha1 校验才落盘)
+
+**Journey log(L3)** — serde 字段映射:JSON 的 `assetIndex`(camelCase)不会自动对应 Rust 的 `asset_index`,需 `#[serde(rename = "assetIndex")]`(缺省会静默 None,测试首次失败即此因);`JoinSet::spawn` 要求 'static,分块迭代时强闭包引用 chunk 会报 E0597 → 任务内 clone 所有捕获值;真实 26.2 index 声明 5057 对象 / 479,185,985 B(教学预估 6000+ 是错的,以真实数据为准)。
+
 ## [S1] Problem
 
 M1(Mojang 版本清单)已上线,但用户只能"看列表",不能下载、不能启动。M2 的目标是打通"下载 → 启动"链路,并保持教学优先:每一步拆成独立小课(L1~L6),每课一个可验证的小功能。
@@ -94,10 +104,49 @@ VersionCard「客户端」按钮(useVersionJar hook)
 - 纯逻辑:`fn sha1_hex(&[u8]) -> String`、`fn verify_sha1(&[u8], &str) -> bool`(大小写不敏感) — TDD 已测(官方向量 SHA1("abc")=a9993e36…)
 - UI:每卡「客户端」按钮与「下载」并列,同款三态状态机,完成后 Tooltip 显示路径
 
+### L3:assets 资源下载(设计,2026-08-18)
+
+Minecraft 的 assets = 素材库(音效、语言、字体、图标…),同一个仓库被所有版本共享。assets 总量远大于 jar:26.2 全量约 457MB / 6000+ 文件,而 client.jar 仅 39MB。
+
+教学点 1 — **内容寻址**:资产文件"不按名字、按内容指纹"存储——文件名 = sha1,目录 = `objects/<sha1前两位>/<完整sha1>`。天然防损坏(名字即校验值),全版本共享一个仓库,重复文件自动去重。
+
+教学点 2 — **清单 + 逐件购买**:版本说明书里 `assetIndex` 字段指向一个"物料清单" JSON(index),里面列了每个资产的名字/hash/size。下载 = 拿清单 → 逐项比对本地 → 缺失才下载。已存在的直接跳过(增量)。
+
+教学点 3 — **并发**:6000 个文件串行下载不可接受 → 并发池(限 8)批量拉取。
+
+数据流:
+
+```
+VersionCard「资源」按钮(useVersionAssets hook)
+  → invoke("download_version_assets", { versionId })          # 只传 id,Rust 全包
+  → Rust:读本地 <id>.json → 取 assetIndex{id,sha1,url}
+         → 下载 index JSON(sha1 校验,复用 verify_sha1)→ 写 assets/indexes/<id>.json
+         → serde 解析 objects{<相对路径>: {hash, size}}
+         → 遍历清单:objects/<前两位>/<hash> 已存在 → skip;缺失 → 并发 8 下载
+         → 每个文件下载后 sha1 比对,不一致 Err 且不写盘(沿用 L2 脏数据不落地)
+  → 返回 { total, downloaded, skipped } → 前端按钮状态机 + Tooltip 统计
+```
+
+契约:
+
+- `download_version_assets(version_id: String) -> Result<AssetsSummary, String>`,其中 `AssetsSummary { total: usize, downloaded: usize, skipped: usize }`(serde Serialize 直传前端)
+- 复用:http_client / game_dir / id 校验 / sha1_hex / verify_sha1
+- 本地未先下版本信息 → Err "请先下载该版本的版本信息"
+- 资产下载地址规则:Mojang 资源 CDN `https://resources.download.minecraft.net/<hash前两位>/<hash>`
+- 并发 8(state 共享计数,进度可观测);任一文件校验失败 → Err(不写盘该文件)
+
+布局(教学对照真实启动器):
+
+```
+.bamcl-dev/assets/
+├── indexes/<asset_index_id>.json   # 物料清单,如 indices/32.json(26.2)
+└── objects/<hash前两位>/<hash>      # 内容寻址对象仓库
+```
+
+UI:每卡「资源」按钮与「客户端」并列,同款三态状态机,完成 Tooltip 显示"新增 N/M,跳过 K";错误 Tooltip 显示具体原因。
+
 ### 后续课(概要,逐课细化)
 
-- L2:下载 client.jar + sha1 完整性校验
-- L3:assets(asset index + 资源批量下载)
 - L4:libraries 解析 + natives 下载与解压
 - L5:Java 自动发现(版本适配 + 路径探测)
 - L6:启动参数拼接 + 进程拉起(离线模式)→ 游戏真跑起来
@@ -112,7 +161,7 @@ VersionCard「客户端」按钮(useVersionJar hook)
 
 - [x] T-L1: 下载版本 JSON 全链路(设计见 [S2]/L1)—— acceptance: `npm run build` 与 `cargo check` 通过;`tauri dev` 中点「下载」后 `.bamcl-dev/versions/<id>/<id>.json` 真实落盘,按钮状态正确切换 (covers: S2)
 - [x] T-L2: client.jar 下载 + sha1 校验 —— acceptance: `cargo test` 全绿(sha1/verify/解析 3 测试);`npm run build` 通过;`tauri dev` 点「客户端」后 `versions/<id>/client.jar` 落盘(≈37MB 真实数据),按钮状态正确;篡改说明书中的 sha1 后点下载应报"校验失败" (covers: S2)
-- [ ] T-L3: assets 资源下载 (covers: S2)
+- [x] T-L3: assets 资源下载 —— acceptance: `cargo test` 全绿(assetIndex 解析 / 内容寻址路径 / verify 复用);`npm run build` 通过;`tauri dev` 点「资源」后 `assets/indexes/32.json` 落盘 + 首次全量下载 5057 文件(479,185,985 B),再点一次 skipped 全量(增量验证);篡改 index 中某文件 hash 后应报错 (covers: S2)
 - [ ] T-L4: libraries + natives (covers: S2)
 - [ ] T-L5: Java 发现 (covers: S2)
 - [ ] T-L6: 启动参数 + 进程拉起(离线) (covers: S2)
