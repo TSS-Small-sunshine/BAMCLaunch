@@ -157,11 +157,35 @@ fn safe_entry_path(natives_dir: &Path, entry: &str) -> Option<PathBuf> {
     path.starts_with(natives_dir).then_some(path)
 }
 
+/// L4:胖 jar 裁剪——LWJGL 3.4 的 natives jar 一个包里同时装 x64/x86/arm64 三套 dll
+/// (还有 META-INF 校验文件),只解本机架构那套,其余丢弃。断言规则:
+///  - META-INF/ 前缀一律跳过(实测全是 .sha1/.git 元数据,无真 dll)
+///  - windows/<arch>/ 目录:仅当 arch 与当前架构一致才放行
+///  - 其他(平铺 jar,如 jtracy)原样保留
+fn entry_allowed_for_arch(entry: &str, arch: &str) -> bool {
+    if entry.starts_with("META-INF/") {
+        return false;
+    }
+    if let Some(rest) = entry.strip_prefix("windows/") {
+        let Some(entry_arch) = rest.split('/').next() else {
+            return false;
+        };
+        return entry_arch == arch;
+    }
+    true
+}
+
 /// L4:把 natives jar(zip)里的文件解压到 natives 目录,返回解压出的文件数。
-/// 条目逐个安全化,任何逃逸路径即整体失败(zip slip 防护)。
+/// 条目逐个安全化,任何逃逸路径即整体失败(zip slip 防护);
+/// 胖 jar 只解本机架构(entry_allowed_for_arch)。
 /// 同步函数:zip 解压是 CPU 密集工作,调用方用 spawn_blocking 丢进阻塞线程池
 /// (ZipFile 实现了非 Send 的 dyn Read,待在 async 任务里会编译期报错,这也是教学点)。
-fn extract_natives(jar_bytes: &[u8], natives_dir: &Path, lib_name: &str) -> Result<usize, String> {
+fn extract_natives(
+    jar_bytes: &[u8],
+    natives_dir: &Path,
+    lib_name: &str,
+    arch: &str,
+) -> Result<usize, String> {
     use std::io::Read;
 
     let mut archive =
@@ -172,7 +196,7 @@ fn extract_natives(jar_bytes: &[u8], natives_dir: &Path, lib_name: &str) -> Resu
             .by_index(i)
             .map_err(|e| format!("读取原生库 {lib_name} 失败: {e}"))?;
         let entry = file.name().to_string();
-        if file.is_dir() {
+        if file.is_dir() || !entry_allowed_for_arch(&entry, arch) {
             continue;
         }
         let target = safe_entry_path(natives_dir, &entry)
@@ -410,6 +434,15 @@ pub async fn download_version_assets(version_id: String) -> Result<AssetsSummary
     })
 }
 
+/// Rust 架构名 → LWJGL fat-jar 目录名(x86_64→x64,aarch64→arm64,x86 不变)
+fn lwjgl_arch() -> &'static str {
+    match std::env::consts::ARCH {
+        "aarch64" => "arm64",
+        "x86_64" => "x64",
+        other => other,
+    }
+}
+
 /// 下载该版本在**当前平台**需要的全部 libraries(第三方运行库)。
 /// 流程:读本地说明书 → rules 按当前 OS 过滤(windows)→ 遍历:已存在跳过,缺失的并发 8 下载
 ///   → 每 jar sha1 校验,不一致不写盘 → natives 条目(zip)额外解压到 versions/<id>/natives/(路径穿越防护)。
@@ -459,6 +492,7 @@ pub async fn download_version_libraries(version_id: String) -> Result<LibrariesS
 
     // 4. 并发 8 下载缺失库:每 jar sha1 校验,失败即整体报错;natives 解压
     let client = http_client()?;
+    let arch = lwjgl_arch();
     let mut downloaded = 0usize;
     let mut natives = 0usize;
     for chunk in missing.chunks(8) {
@@ -500,8 +534,9 @@ pub async fn download_version_libraries(version_id: String) -> Result<LibrariesS
                 if is_native {
                     // zip 解压是 CPU 密集的同步工作 + ZipFile 非 Send → spawn_blocking 线程池
                     let jar_bytes = bytes.clone();
+                    let arch = arch.to_string();
                     native_count = tokio::task::spawn_blocking(move || {
-                        extract_natives(&jar_bytes, &natives_dir, &name)
+                        extract_natives(&jar_bytes, &natives_dir, &name, &arch)
                     })
                     .await
                     .map_err(|e| format!("解压任务失败: {e}"))??;
@@ -716,5 +751,29 @@ mod tests {
         );
         assert!(safe_entry_path(&target_dir, "../evil.dll").is_none());
         assert!(safe_entry_path(&target_dir, "/absolute.dll").is_none());
+    }
+
+    /// L4:胖 jar 裁剪——META-INF 元数据永远跳过
+    #[test]
+    fn entry_filter_skips_meta_inf() {
+        assert!(!entry_allowed_for_arch(
+            "META-INF/windows/x64/org/lwjgl/lwjgl.dll.sha1",
+            "x64"
+        ));
+    }
+
+    /// L4:胖 jar 裁剪——只解本机架构的 dll,其他架构丢弃(LWJGL 3.4 fat-jar 实测 3 套并存)
+    #[test]
+    fn entry_filter_keeps_only_current_arch() {
+        let entry = "windows/x64/org/lwjgl/lwjgl.dll";
+        assert!(entry_allowed_for_arch(entry, "x64"));
+        assert!(!entry_allowed_for_arch(entry, "arm64"));
+        assert!(!entry_allowed_for_arch("windows/arm64/org/lwjgl/lwjgl.dll", "x64"));
+    }
+
+    /// L4:胖 jar 裁剪——平铺 jar(如 jtracy,无架构目录)原样保留
+    #[test]
+    fn entry_filter_keeps_flat_entries() {
+        assert!(entry_allowed_for_arch("jtracy-jni-windows.dll", "x64"));
     }
 }
