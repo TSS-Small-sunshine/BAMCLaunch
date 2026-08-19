@@ -25,4 +25,5 @@ serde_json = "1"
 reqwest = { version = "0.13.4", features = ["json"] }
 tokio = { version = "1", features = ["fs", "rt"] }
 sha1 = "0.10"
+zip = "2"
 

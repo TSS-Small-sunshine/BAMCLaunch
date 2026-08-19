@@ -8,7 +8,8 @@ pub fn run() {
             commands::version::fetch_version_manifest,
             commands::download::download_version_json,
             commands::download::download_version_jar,
-            commands::download::download_version_assets
+            commands::download::download_version_assets,
+            commands::download::download_version_libraries
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

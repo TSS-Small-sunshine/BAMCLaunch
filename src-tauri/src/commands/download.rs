@@ -30,6 +30,9 @@ struct VersionJson {
     /// L3 起使用;下载 client.jar 时不关心,故为 Option
     #[serde(default, rename = "assetIndex")]
     asset_index: Option<AssetIndexReference>,
+    /// L4 起使用;下载 client.jar 时不关心,故默认空
+    #[serde(default)]
+    libraries: Vec<Library>,
 }
 
 /// asset index JSON 里单个对象的条目(只需本课用到的字段)
@@ -49,6 +52,50 @@ pub struct AssetsSummary {
     pub total: usize,
     pub downloaded: usize,
     pub skipped: usize,
+}
+
+/// L4:libraries 数组里单个库的 rules 条目(26.2 实测只有 allow + os.name,通用解析)
+#[derive(Debug, Deserialize)]
+struct LibraryRuleOs {
+    name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct LibraryRule {
+    action: String,
+    #[serde(default)]
+    os: Option<LibraryRuleOs>,
+}
+
+/// L4:libraries 数组里单个库的下载信息(只需本课用到的字段)
+#[derive(Debug, Deserialize, Clone)]
+struct ArtifactDownload {
+    path: String,
+    sha1: String,
+    url: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct LibraryDownloads {
+    artifact: ArtifactDownload,
+}
+
+/// L4:libraries 数组里单个库(只需本课用到的字段)
+#[derive(Debug, Deserialize)]
+struct Library {
+    name: String,
+    downloads: LibraryDownloads,
+    #[serde(default)]
+    rules: Vec<LibraryRule>,
+}
+
+/// L4 返回给前端的下载统计(natives = 解压的原生库包数)
+#[derive(Debug, serde::Serialize)]
+pub struct LibrariesSummary {
+    pub total: usize,
+    pub downloaded: usize,
+    pub skipped: usize,
+    pub natives: usize,
 }
 
 /// 内容寻址的对象路径:objects/<sha1 前两位>/<完整 sha1>
@@ -77,6 +124,68 @@ fn classify_objects(
         }
     }
     (missing, skipped)
+}
+
+/// L4:rules 过滤——该库在当前平台是否允许下载。
+/// 语义与官方启动器一致:无 rules 默认允许;有 rules 时最后一条匹配的规则定夺(allow→true)。
+/// os 过滤只按名称(26.2 实测 rules 无 arch/disallow 维度)。
+fn library_allowed(rules: &[LibraryRule], os_name: &str) -> bool {
+    let Some(last_match) = rules
+        .iter()
+        .filter(|r| r.os.as_ref().is_none_or(|os| os.name == os_name))
+        .last()
+    else {
+        return rules.is_empty();
+    };
+    last_match.action == "allow"
+}
+
+/// L4:native 识别——名字最后一个冒号段以 natives- 开头即原生库包
+fn is_native_library(name: &str) -> bool {
+    name.rsplit(':').next().is_some_and(|c| c.starts_with("natives-"))
+}
+
+/// L4:zip 条目路径的安全化——拒绝绝对路径、反斜杠、空段与 .. 逃逸,保证解压不越出 natives 目录
+fn safe_entry_path(natives_dir: &Path, entry: &str) -> Option<PathBuf> {
+    if entry.starts_with('/') || entry.contains('\\') {
+        return None;
+    }
+    if entry.split('/').any(|seg| seg.is_empty() || seg == "..") {
+        return None;
+    }
+    let path = natives_dir.join(entry);
+    path.starts_with(natives_dir).then_some(path)
+}
+
+/// L4:把 natives jar(zip)里的文件解压到 natives 目录,返回解压出的文件数。
+/// 条目逐个安全化,任何逃逸路径即整体失败(zip slip 防护)。
+/// 同步函数:zip 解压是 CPU 密集工作,调用方用 spawn_blocking 丢进阻塞线程池
+/// (ZipFile 实现了非 Send 的 dyn Read,待在 async 任务里会编译期报错,这也是教学点)。
+fn extract_natives(jar_bytes: &[u8], natives_dir: &Path, lib_name: &str) -> Result<usize, String> {
+    use std::io::Read;
+
+    let mut archive =
+        zip::ZipArchive::new(std::io::Cursor::new(jar_bytes)).map_err(|e| format!("打开原生库 {lib_name} 失败: {e}"))?;
+    let mut count = 0;
+    for i in 0..archive.len() {
+        let mut file = archive
+            .by_index(i)
+            .map_err(|e| format!("读取原生库 {lib_name} 失败: {e}"))?;
+        let entry = file.name().to_string();
+        if file.is_dir() {
+            continue;
+        }
+        let target = safe_entry_path(natives_dir, &entry)
+            .ok_or_else(|| format!("原生库 {lib_name} 含非法路径: {entry}"))?;
+        let mut buf = Vec::with_capacity(file.size() as usize);
+        file.read_to_end(&mut buf)
+            .map_err(|e| format!("解压 {entry} 失败: {e}"))?;
+        std::fs::create_dir_all(target.parent().ok_or_else(|| "解压目标缺少父目录".to_string())?)
+            .map_err(|e| format!("创建目录失败: {e}"))?;
+        std::fs::write(&target, &buf).map_err(|e| format!("写入 {entry} 失败: {e}"))?;
+        count += 1;
+    }
+    Ok(count)
 }
 
 /// 计算字节流的 SHA-1 十六进制指纹(四十位小写)
@@ -301,6 +410,122 @@ pub async fn download_version_assets(version_id: String) -> Result<AssetsSummary
     })
 }
 
+/// 下载该版本在**当前平台**需要的全部 libraries(第三方运行库)。
+/// 流程:读本地说明书 → rules 按当前 OS 过滤(windows)→ 遍历:已存在跳过,缺失的并发 8 下载
+///   → 每 jar sha1 校验,不一致不写盘 → natives 条目(zip)额外解压到 versions/<id>/natives/(路径穿越防护)。
+/// 前置:需先 download_version_json 下载版本信息。
+/// 前端通过 invoke("download_version_libraries", { versionId }) 调用。
+#[tauri::command]
+pub async fn download_version_libraries(version_id: String) -> Result<LibrariesSummary, String> {
+    // 系统边界校验:version_id 会拼成文件路径,拒绝路径分隔符与 ..
+    if version_id.contains(['/', '\\']) || version_id.contains("..") {
+        return Err("非法的版本标识".into());
+    }
+
+    // 1. 读本地说明书:拿 libraries 清单
+    let info_path = game_dir()
+        .join("versions")
+        .join(&version_id)
+        .join(format!("{version_id}.json"));
+    let raw = tokio::fs::read(&info_path)
+        .await
+        .map_err(|_| "请先下载该版本的版本信息".to_string())?;
+    let info: VersionJson =
+        serde_json::from_slice(&raw).map_err(|e| format!("解析版本信息失败: {e}"))?;
+
+    // 2. rules 过滤:只下当前平台(Windows)需要的库
+    let os_name = std::env::consts::OS;
+    let required: Vec<&Library> = info
+        .libraries
+        .iter()
+        .filter(|lib| library_allowed(&lib.rules, os_name))
+        .collect();
+
+    // 3. 遍历清单:已存在的跳过,缺失的进入待下载列表;同时收集 natives 包
+    let libs_dir = game_dir().join("libraries");
+    let natives_dir = game_dir().join("versions").join(&version_id).join("natives");
+    let mut missing: Vec<&Library> = Vec::new();
+    let mut skipped = 0usize;
+    for lib in &required {
+        let target = safe_entry_path(&libs_dir, &lib.downloads.artifact.path)
+            .ok_or_else(|| format!("库路径非法: {}", lib.downloads.artifact.path))?;
+        if target.is_file() {
+            skipped += 1;
+        } else {
+            missing.push(lib);
+        }
+    }
+    let total = required.len();
+
+    // 4. 并发 8 下载缺失库:每 jar sha1 校验,失败即整体报错;natives 解压
+    let client = http_client()?;
+    let mut downloaded = 0usize;
+    let mut natives = 0usize;
+    for chunk in missing.chunks(8) {
+        let mut handles = tokio::task::JoinSet::new();
+        for lib in chunk {
+            let client = client.clone();
+            let libs_dir = libs_dir.clone();
+            let natives_dir = natives_dir.clone();
+            let name = lib.name.clone();
+            let artifact = lib.downloads.artifact.clone();
+            let is_native = is_native_library(&name);
+            handles.spawn(async move {
+                let bytes = client
+                    .get(&artifact.url)
+                    .send()
+                    .await
+                    .map_err(|e| format!("下载库 {name} 失败: {e}"))?
+                    .bytes()
+                    .await
+                    .map_err(|e| format!("读取库 {name} 失败: {e}"))?;
+                if !verify_sha1(&bytes, &artifact.sha1) {
+                    return Err(format!(
+                        "库 {name} 校验失败(期望 sha1 {},实际 {})",
+                        artifact.sha1,
+                        sha1_hex(&bytes)
+                    ));
+                }
+                let target = safe_entry_path(&libs_dir, &artifact.path)
+                    .ok_or_else(|| format!("库路径非法: {}", artifact.path))?;
+                tokio::fs::create_dir_all(
+                    target.parent().ok_or_else(|| "库路径缺少父目录".to_string())?,
+                )
+                .await
+                .map_err(|e| format!("创建目录失败: {e}"))?;
+                tokio::fs::write(&target, &bytes)
+                    .await
+                    .map_err(|e| format!("写入库 {name} 失败: {e}"))?;
+                let mut native_count = 0;
+                if is_native {
+                    // zip 解压是 CPU 密集的同步工作 + ZipFile 非 Send → spawn_blocking 线程池
+                    let jar_bytes = bytes.clone();
+                    native_count = tokio::task::spawn_blocking(move || {
+                        extract_natives(&jar_bytes, &natives_dir, &name)
+                    })
+                    .await
+                    .map_err(|e| format!("解压任务失败: {e}"))??;
+                }
+                Ok::<usize, String>(native_count)
+            });
+        }
+        while let Some(result) = handles.join_next().await {
+            let native_count = result
+                .map_err(|e| format!("下载任务失败: {e}"))?
+                .map_err(|e| e)?;
+            downloaded += 1;
+            natives += native_count;
+        }
+    }
+
+    Ok(LibrariesSummary {
+        total,
+        downloaded,
+        skipped,
+        natives,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -435,5 +660,61 @@ mod tests {
         assert_eq!(missing[0].0, "icons/icon_b.png");
 
         fs::remove_dir_all(&temp_dir).unwrap();
+    }
+
+    /// L4:rules 过滤——没有 rules 的库默认总是要下(跨平台通用库)
+    #[test]
+    fn library_without_rules_is_allowed() {
+        assert!(library_allowed(&[], "windows"));
+    }
+
+    /// L4:rules 过滤——os 匹配则允许,不匹配则拒绝
+    #[test]
+    fn rule_allow_only_matching_os() {
+        let rules = vec![LibraryRule {
+            action: "allow".into(),
+            os: Some(LibraryRuleOs { name: "windows".into() }),
+        }];
+        assert!(library_allowed(&rules, "windows"));
+        assert!(!library_allowed(&rules, "linux"));
+    }
+
+    /// L4:rules 语义——最后一条匹配的规则定夺(与官方启动器一致)
+    #[test]
+    fn last_matching_rule_decides() {
+        let rules = vec![
+            LibraryRule {
+                action: "allow".into(),
+                os: Some(LibraryRuleOs { name: "windows".into() }),
+            },
+            LibraryRule {
+                action: "disallow".into(),
+                os: Some(LibraryRuleOs { name: "windows".into() }),
+            },
+        ];
+        assert!(!library_allowed(&rules, "windows"));
+    }
+
+    /// L4:native 识别——名字含 natives-windows 标记(26.2 实测形状)
+    #[test]
+    fn recognizes_native_library() {
+        assert!(is_native_library("org.lwjgl:lwjgl-glfw:3.4.1:natives-windows"));
+        assert!(!is_native_library("org.lwjgl:lwjgl-glfw:3.4.1"));
+    }
+
+    /// L4:zip 路径穿越防护——拒绝 .. 与绝对路径,放行正常条目
+    #[test]
+    fn safe_entry_path_rejects_escape() {
+        let target_dir = PathBuf::from("/game/.bamcl-dev/versions/26.2/natives");
+        assert_eq!(
+            safe_entry_path(&target_dir, "lwjgl.dll"),
+            Some(target_dir.join("lwjgl.dll"))
+        );
+        assert_eq!(
+            safe_entry_path(&target_dir, "natives/glfw.dll"),
+            Some(target_dir.join("natives/glfw.dll"))
+        );
+        assert!(safe_entry_path(&target_dir, "../evil.dll").is_none());
+        assert!(safe_entry_path(&target_dir, "/absolute.dll").is_none());
     }
 }
