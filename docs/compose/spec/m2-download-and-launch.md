@@ -1,7 +1,7 @@
 ---
 feature: m2-download-and-launch
 status: in-progress
-updated: 2026-08-18
+updated: 2026-08-19
 branch: main
 commits: <base-sha>..<head-sha> # filled at delivery
 ---
@@ -39,6 +39,17 @@ commits: <base-sha>..<head-sha> # filled at delivery
 **Verification(L3)** — `cargo test` 8 passed(新增 4:assetIndex 解析 / 内容寻址路径 / CDN URL / 跳过已有分类)/ `cargo check` ok / `npm run build` ✓ / `tauri dev` 手动:点 26.2「资源」→ `assets/indexes/32.json` 586,366 B 落盘 + `assets/objects/` 5057 文件、总计 479,185,985 B —— 与 index 声明 5057 及官方 totalSize 完全一致(全量通过 sha1 校验才落盘)
 
 **Journey log(L3)** — serde 字段映射:JSON 的 `assetIndex`(camelCase)不会自动对应 Rust 的 `asset_index`,需 `#[serde(rename = "assetIndex")]`(缺省会静默 None,测试首次失败即此因);`JoinSet::spawn` 要求 'static,分块迭代时强闭包引用 chunk 会报 E0597 → 任务内 clone 所有捕获值;真实 26.2 index 声明 5057 对象 / 479,185,985 B(教学预估 6000+ 是错的,以真实数据为准)。
+
+**L4:libraries 下载 + natives 解压(2026-08-19 完成)**
+
+- 后端:`download_version_libraries(version_id)` 单命令全链路——读本地说明书 → rules 按当前 OS 过滤(windows)→ classify 缺失/已有 → **并发 8** 下载(`libraries.minecraft.net/<path>`)→ 每 jar sha1 校验,失败不写盘 → natives 条目(zip)解压到 `versions/<id>/natives/` → 返回 `LibrariesSummary{total, downloaded, skipped, natives}`
+- rules 语义与官方启动器一致:无 rules 默认允许,有 rules 时最后一条匹配的规则定夺;26.2 实测 131 库中 Windows 需要 88 个(~86MB)
+- 教学点:**胖 jar 裁剪**——LWJGL 3.4.1 实测一个 natives jar 同时装 x64/x86/arm64 三套 dll + META-INF 元数据,`entry_allowed_for_arch` 只解本机架构(arch 名映射 `lwjgl_arch()`),META-INF 整体跳过、平铺 jar 原样保留
+- 前端:每卡「库」按钮(useVersionLibraries 同款状态机),完成 Tooltip 显示"库 N/M,跳过 K,原生库 X"
+
+**Verification(L4)** — `cargo test` 16 passed(新增 8:rules 过滤×3 / native 识别 / 安全路径 / 架构裁剪×3)/ `cargo check` ok / `npm run build` ✓ / `tauri dev` 手动:点 26.2「库」→ `libraries/` 88 个 jar、85.8MB 落盘 + `versions/26.2/natives/` 只含 x64 架构 11 个 dll + 平铺 jtracy(无 arm64/x86/META-INF);修复前实测三套 dll 全解 + 57 个 META-INF 文件,删目录重下后验证只 x64
+
+**Journey log(L4)** — `ZipFile` 实现了非 Send 的 `dyn Read`,直接放进 async 任务会编译期报错(E0277 future 不 Send)→ 正确姿势是 `spawn_blocking` 丢进阻塞线程池(zip 解压是 CPU 密集工作,也不该占异步运行时);LWJGL 3.4 的 natives jar 是"胖 jar"(一包三架构),只在真实 26.2 数据上才暴露——教学预估"1 套 dll"是错的,以实测定 3 套为准。
 
 ## [S1] Problem
 
@@ -151,7 +162,7 @@ Minecraft 的 libraries = 第三方运行库(压缩 lz4、OpenGL 绑定 LWJGL、
 
 教学点 1 — **rules 过滤**:不是所有库里全都要。每项可带 `rules`(数组),26.2 实测全部是 `[{action:"allow", os:{name:"windows"|"linux"|"osx"}}]` 形式(无 arch/disallow 维度)。游戏要跑在哪个平台就只下哪个平台的库,否则把 4 个平台的 native 全拉下来。**现代格式没有老式的 `natives`/`classifiers` 字段** —— natives 就是独立条目 + os 规则过滤(如 `org.lwjgl:lwjgl-glfw:3.4.1:natives-windows`)。
 
-教学点 2 — **natives 解压**:名字含 `natives-windows` 的 jar 是 zip 格式,里面装的是 `.dll`。启动时 Java 要从目录加载这些原生库 → 解压到 `versions/<id>/natives/`。教学点:**zip 路径穿越防护**——解压每个条目前校验目标路径必须仍位于 natives 目录内(拒绝 `..` / 绝对路径),这是真实启动器也会防的任意文件写漏洞。
+教学点 2 — **natives 解压**:名字含 `natives-windows` 的 jar 是 zip 格式,里面装的是 `.dll`。启动时 Java 要从目录加载这些原生库 → 解压到 `versions/<id>/natives/`。教学点:**zip 路径穿越防护**——解压每个条目前校验目标路径必须仍位于 natives 目录内(拒绝 `..` / 绝对路径),这是真实启动器也会防的任意文件写漏洞。教学点 3:**胖 jar 裁剪**——LWJGL 3.4.1 实测一个 natives jar 同时装 x64/x86/arm64 三套 dll(另有 META-INF 的 .sha1/.git 元数据),只解本机架构那套(`entry_allowed_for_arch`,arch 名映射 `lwjgl_arch()`,Rust `x86_64`→LWJGL `x64`);平铺 jar(如 jtracy)原样保留。META-INF 一律跳过。
 
 数据流:
 
@@ -174,6 +185,8 @@ VersionCard「库」按钮(useVersionLibraries hook)
   - `fn library_allowed(rules: &[Rule], os_name: &str) -> bool` — 无 rules 默认允许;有 rules 按最后一条匹配规则定夺(`allow`→true);os 不匹配视为不匹配
   - `fn is_native_library(name: &str) -> bool` — 名字含 `natives-<os>` 标记(教学实现用 `natives-windows`,可参数化)
   - `fn safe_entry_path(natives_dir: &Path, entry: &str) -> Option<PathBuf>` — 拒绝绝对路径与 `..`
+  - `fn entry_allowed_for_arch(entry: &str, arch: &str) -> bool` — 胖 jar 裁剪:META-INF 跳过 / 只解本机架构
+  - `fn lwjgl_arch() -> &'static str` — Rust 架构名 → LWJGL fat-jar 目录名
 - 新增依赖:`zip` crate(解压 natives jar)
 - 本地未先下版本信息 → Err "请先下载该版本的版本信息"
 
@@ -202,6 +215,6 @@ UI:每卡「库」按钮与「资源」并列,同款三态状态机,完成 Toolt
 - [x] T-L1: 下载版本 JSON 全链路(设计见 [S2]/L1)—— acceptance: `npm run build` 与 `cargo check` 通过;`tauri dev` 中点「下载」后 `.bamcl-dev/versions/<id>/<id>.json` 真实落盘,按钮状态正确切换 (covers: S2)
 - [x] T-L2: client.jar 下载 + sha1 校验 —— acceptance: `cargo test` 全绿(sha1/verify/解析 3 测试);`npm run build` 通过;`tauri dev` 点「客户端」后 `versions/<id>/client.jar` 落盘(≈37MB 真实数据),按钮状态正确;篡改说明书中的 sha1 后点下载应报"校验失败" (covers: S2)
 - [x] T-L3: assets 资源下载 —— acceptance: `cargo test` 全绿(assetIndex 解析 / 内容寻址路径 / verify 复用);`npm run build` 通过;`tauri dev` 点「资源」后 `assets/indexes/32.json` 落盘 + 首次全量下载 5057 文件(479,185,985 B),再点一次 skipped 全量(增量验证);篡改 index 中某文件 hash 后应报错 (covers: S2)
-- [ ] T-L4: libraries 下载 + natives 解压(rules 过滤 / sha1 校验 / 并发 8 / 路径穿越防护)—— acceptance: `cargo test` 全绿(rules 过滤 / native 识别 / 安全路径 3 测试);`npm run build` 通过;`tauri dev` 点「库」后 `libraries/` 落盘 Windows 所需 jar(~110MB)+ `versions/26.2/natives/` 解压出 .dll;再点一次 skipped 全量;篡改某 jar sha1 后应报错 (covers: S2)
+- [x] T-L4: libraries 下载 + natives 解压(rules 过滤 / sha1 校验 / 并发 8 / 路径穿越防护 / 胖 jar 架构裁剪)—— acceptance: `cargo test` 全绿(rules 过滤 / native 识别 / 安全路径 / 架构裁剪 共 6 测试);`npm run build` 通过;`tauri dev` 点「库」后 `libraries/` 落盘 Windows 所需 jar(~86MB)+ `versions/26.2/natives/` 只含 x64 架构 dll(无 arm64/x86/META-INF);再点一次 skipped 全量;篡改某 jar sha1 后应报错 (covers: S2)
 - [ ] T-L5: Java 发现 (covers: S2)
 - [ ] T-L6: 启动参数 + 进程拉起(离线) (covers: S2)
