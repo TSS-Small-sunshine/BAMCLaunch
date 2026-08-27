@@ -199,16 +199,98 @@ VersionCard「库」按钮(useVersionLibraries hook)
 
 UI:每卡「库」按钮与「资源」并列,同款三态状态机,完成 Tooltip 显示"库 N/M,跳过 K,原生库 X";错误 Tooltip 显示具体原因。
 
-### 后续课(概要,逐课细化)
+### L5:Java 发现(设计,2026-08-27)
 
-- L5:Java 自动发现(版本适配 + 路径探测)
-- L6:启动参数拼接 + 进程拉起(离线模式)→ 游戏真跑起来
+Minecraft 是 Java 程序,启动器必须自己找一个**匹配说明书要求版本**的 java.exe。原因有三:
+1. PATH 里那个 java 不一定够新 —— 26.2 要求 Java 25(2025-09 才 GA),玩家可能只装了 17 给别的游戏
+2. 用户可能装了多个 Java(老游戏用 8,新游戏用 21,MC 26.2 要 25)—— 启动器需要识别并展示候选
+3. 缺模块会爆 `UnsupportedClassVersionError` —— 26.2 还用 `java-runtime-epsilon` 这种 Java 9+ 才有的模块化 JRE 概念
+
+**教学点 1 — 读说明书拿需求**:从 `<id>.json` 顶层 `javaVersion: {component: "java-runtime-epsilon", majorVersion: 25}` 读出最小主版本号(整数 25)。这就是**适配判定**的输入。
+
+**教学点 2 — 多源扫描,合成候选列表**(任一来源都可能有,也都没有——给玩家一个列表让 ta 自己挑):
+
+| 源 | 怎么找 | 适用平台 |
+|---|---|---|
+| `JAVA_HOME` 环境变量 | 读 env → `<JAVA_HOME>/bin/java.exe` | 全平台 |
+| `PATH` 解析 | split `PathSep` → 每个目录看有没有 `java.exe` | 全平台 |
+| Windows 常见安装路径 | glob `C:\Program Files\Java\jdk-*`、`C:\Program Files\Eclipse Adoptium\jdk-*`、`C:\Program Files\Microsoft\jdk-*`、`C:\Program Files\Zulu\zulu-*` | 仅 Windows |
+| Windows 注册表 `HKLM\SOFTWARE\JavaSoft\JDK\<version>` | `winreg` crate 读 `JavaHome` 值 → 拼 `bin\java.exe` | 仅 Windows |
+
+**教学点 3 — 探活取真实版本**:对每个候选路径 spawn `java -version`(走 stdout/stderr,JDK 11+ 走 stderr,旧版走 stdout,**都要收**)。解析首行:
+```
+openjdk version "25" 2025-09-16          → 25
+openjdk version "1.8.0_412" 2025-08-19   → 8 (旧版「1.x」格式要特判)
+```
+正则 `version "(\d+)(?:\.(\d+))?(?:\.(\d+))?"` —— 第一个捕获组即主版本。旧版 `1.8.0` 第二组才是真主版本(`1.8` → 8),特判。
+
+**教学点 4 — 版本适配判定**:每个候选打标 `meets_requirement = candidate.version >= required.major_version`。前端按是否适配分组呈现(适配的优先显示)。
+
+数据流:
+
+```
+[扫Java]按钮 (新) → invoke("scan_java_installations")
+  → Rust:遍历四个来源 → 去重(同 path 只算一次)→ spawn java -version 取版本号
+     → 返回 Vec<JavaCandidate { path, version, source, meets_requirement }>
+
+[版本卡]读取 javaVersion.majorVersion → 调 scan → 把结果按适配/不适配分组渲染
+  (L5 仅展示,不启动;L6 才用选定 candidate 的 path 真去 spawn 游戏)
+```
+
+契约:
+
+- `scan_java_installations() -> Result<JavaScanResult, String>`,其中 `JavaScanResult { required_major: u32, candidates: Vec<JavaCandidate> }`(serde Serialize)
+- `JavaCandidate { path: String, version: u32, source: JavaSource, meets_requirement: bool }`
+- `JavaSource` 枚举:`JAVA_HOME | PATH | CommonDir | Registry`,Serialize as snake_case
+- 任何来源抛错不阻断整体(如注册表无权限 → 该来源返空,继续下一个);所有来源收集完合并去重
+- 同 path 多个来源命中只保留先到的(优先级 `JAVA_HOME > PATH > CommonDir > Registry`)
+- 候选文件不存在或 spawn 失败 → 跳过该候选,不报错(教学点:扫描天然是「尽力」语义)
+- 路径规范化为绝对路径后比较,避免 `C:\...\bin\java.exe` 与 `./bin/java.exe` 重复
+- 已知 Java 路径 glob 用 `std::fs::read_dir` 递归遍历 + 文件名 pattern 匹配,不引入额外依赖(教学:能 std 解决就别加 crate)
+
+UI:版本卡新增「Java」按钮(与「下载」「客户端」「资源」「库」并列),同款三态状态机。点击 → 调 scan → 弹 Chakra Modal 列候选(适配项置顶 + 绿色✓图标,源标 JAVA_HOME/PATH/CommonDir/Registry);选中项 Tooltip 显示「✓ Java 25 · JAVA_HOME」之类的精简信息;未找到任何 Java → Modal 显示「未检测到 Java 安装,请安装 Java 25+ 或在设置中手动指定路径」(设置持久化在 M3)
+
+布局:L5 不写新文件 —— 只读取系统。Java 安装本身不受 BAMCLaunch 管理(玩家自己装)。
+
+Out of scope:
+
+- **手动下载 Java**(Java 自下载是另一课,L5 不做)
+- **设置页手动指定 Java 路径**(M3)
+- **真启动游戏**(L6 才把 JavaCandidate.path 喂给 tokio::process::Command)
+- **macOS/Linux 特定扫描路径**(L5 仅做 Windows;跨平台细化等真上 macOS 再补)
+
+纯逻辑 TDD(预计新增 ~8 个测试):
+
+- `fn parse_java_version(stdout_stderr: &str) -> Option<u32>` —— 正则解析"version \"N\""
+- `fn parse_java_version("version \"1.8.0_412\"") == Some(8)` —— 旧版「1.x」特判
+- `fn meets_requirement(candidate_version: u32, required_major: u32) -> bool` —— 简单比较
+- `fn dedupe_candidates(candidates: Vec<JavaCandidate>) -> Vec<JavaCandidate>` —— 同 path 只留一个,优先级决定保留谁
+- `fn discover_from_env() -> Vec<PathBuf>` —— 读 JAVA_HOME + PATH
+- `fn discover_from_common_dirs() -> Vec<PathBuf>` —— 扫常见安装路径
+- `fn discover_from_registry() -> Vec<PathBuf>` —— 读注册表(Windows only,单元测试可用 mock)
+
+新增依赖:`winreg = "0.52"`(Windows 注册表读写,Linux/macOS 上此模块不可用,L5 用 cfg(windows) 隔离,其他平台该函数返回空 Vec)
+
+### L6:启动参数拼接 + 进程拉起(设计,待细化)
+
+L5 给出候选 Java 路径,L6:
+1. 选定 Java 后,把所有 libraries/ jar + client.jar 拼成 `-cp` 参数
+2. 读 `<id>.json` 的 `arguments.jvm[]`(含 rules 过滤)拼 JVM 参数
+3. 读 `arguments.game[]` 拼游戏参数(暂以离线模式填充占位:玩家名 `Player`、UUID 离线生成、accessToken 留空)
+4. `tokio::process::Command::new(java_path).args(...).spawn()` 拉起游戏
+5. 实时把 stdout/stderr 推到前端(Webview 内的 console 或独立日志页;M3)
+
+具体细化在 T-L5 验收后再写(避免一次性设计过远)。
 
 ## [S3] Out of Scope
 
 - 除 L1 之外的 M2 内容(见后续课)
 - 微软账户登录、Mod/整合包、设置持久化(M3/M4)
-- 自动化测试(沿用 M1 约定:验证 = `npm run build` + `cargo check` + `tauri dev` 手动)
+- L5 仅做 Windows 扫描路径;macOS/Linux 路径细化等真上跨平台时补
+- **Java 自下载**(玩家自己装系统 Java;L5 只发现不下载)
+- **手动指定 Java 路径**的设置持久化(M3)
+- **真启动游戏**(L6)
+- 自动化测试(沿用 M1 约定:验证 = `npm run build` + `cargo check` + `tauri dev` 手动;但 L5 加 TDD 因为有 4 个纯函数 + 正则解析值得测)
 
 ## Tasks
 
@@ -216,5 +298,5 @@ UI:每卡「库」按钮与「资源」并列,同款三态状态机,完成 Toolt
 - [x] T-L2: client.jar 下载 + sha1 校验 —— acceptance: `cargo test` 全绿(sha1/verify/解析 3 测试);`npm run build` 通过;`tauri dev` 点「客户端」后 `versions/<id>/client.jar` 落盘(≈37MB 真实数据),按钮状态正确;篡改说明书中的 sha1 后点下载应报"校验失败" (covers: S2)
 - [x] T-L3: assets 资源下载 —— acceptance: `cargo test` 全绿(assetIndex 解析 / 内容寻址路径 / verify 复用);`npm run build` 通过;`tauri dev` 点「资源」后 `assets/indexes/32.json` 落盘 + 首次全量下载 5057 文件(479,185,985 B),再点一次 skipped 全量(增量验证);篡改 index 中某文件 hash 后应报错 (covers: S2)
 - [x] T-L4: libraries 下载 + natives 解压(rules 过滤 / sha1 校验 / 并发 8 / 路径穿越防护 / 胖 jar 架构裁剪)—— acceptance: `cargo test` 全绿(rules 过滤 / native 识别 / 安全路径 / 架构裁剪 共 6 测试);`npm run build` 通过;`tauri dev` 点「库」后 `libraries/` 落盘 Windows 所需 jar(~86MB)+ `versions/26.2/natives/` 只含 x64 架构 dll(无 arm64/x86/META-INF);再点一次 skipped 全量;篡改某 jar sha1 后应报错 (covers: S2)
-- [ ] T-L5: Java 发现 (covers: S2)
+- [ ] T-L5: Java 发现(扫描 + 版本适配,见 [S2]/L5)—— acceptance: `cargo test` 全绿(parse_java_version 新旧格式 / meets_requirement / dedupe_candidates / discover_from_env / discover_from_common_dirs / discover_from_registry mock 共 ≥6 测试);`npm run build` 通过;`tauri dev` 点 26.2「Java」→ 弹 Modal 列出本机所有 Java 候选(适配 Java 25 的置顶,标 source),未检测到 Java 时显示提示文案;注册表无访问权限时不阻断整体(降级继续) (covers: S2)
 - [ ] T-L6: 启动参数 + 进程拉起(离线) (covers: S2)
