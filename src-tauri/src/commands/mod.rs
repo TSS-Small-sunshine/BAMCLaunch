@@ -1,4 +1,5 @@
 pub mod download;
+pub mod java;
 pub mod version;
 
 use reqwest::Client;
