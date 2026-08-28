@@ -1,7 +1,7 @@
 //! L5:Java 发现 —— 在本机扫描所有可用的 java.exe,返回带版本号的候选列表。
 //! 教学点:多源(JAVA_HOME/PATH/常见路径/Windows 注册表)合并 + 正则解析 `java -version` 输出。
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
@@ -70,8 +70,119 @@ fn parse_java_version(text: &str) -> Option<u32> {
 /// 流程:读四个来源 → 去重 → 逐个探活 `java -version` 取版本号 → 计算 meets_requirement → 返回。
 #[tauri::command]
 pub async fn scan_java_installations(version_id: String) -> Result<JavaScanResult, String> {
-    let _ = version_id; // TODO(L5 后段):读 <id>.json 拿 required_major
-    todo!("TDD: 实现见后续测试")
+    let required_major = read_required_major_from_version_json(&version_id)?;
+
+    // 1) 收集候选(每个来源独立跑,任何错误不阻断整体 —— 教学:扫描天然尽力)
+    let mut candidates_paths = Vec::new();
+
+    // 1a) JAVA_HOME 单独算(优先级最高)
+    if let Some(jh) = std::env::var("JAVA_HOME").ok().filter(|s| !s.is_empty()) {
+        let p = env_java_path(&jh);
+        if p.is_file() {
+            candidates_paths.push((p, JavaSource::JavaHome));
+        }
+    }
+
+    // 1b) PATH 来源 —— 跳过已经在 JAVA_HOME 里出现的(避免 source 标记矛盾)
+    let java_home_key = std::env::var("JAVA_HOME")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .map(|jh| normalize_path_key(&env_java_path(&jh).to_string_lossy()));
+    for p in discover_from_env() {
+        let key = normalize_path_key(&p.to_string_lossy());
+        if java_home_key.as_ref() == Some(&key) {
+            continue; // JAVA_HOME 已经处理过
+        }
+        candidates_paths.push((p, JavaSource::Path));
+    }
+
+    // 1c) CommonDir + Registry
+    for p in discover_from_common_dirs() {
+        candidates_paths.push((p, JavaSource::CommonDir));
+    }
+    for p in discover_from_registry() {
+        candidates_paths.push((p, JavaSource::Registry));
+    }
+
+    // 2) 探活(异步并发)
+    let mut candidates = probe_candidates(candidates_paths).await;
+
+    // 3) 计算 meets_requirement + dedupe(同 path 多源,按 source 优先级)
+    for cand in &mut candidates {
+        cand.meets_requirement = meets_requirement(cand.version, required_major);
+    }
+    candidates = dedupe_candidates(candidates);
+
+    Ok(JavaScanResult {
+        required_major,
+        candidates,
+    })
+}
+
+/// L5:从 `<id>.json` 读 `javaVersion.majorVersion`,缺则报错
+fn read_required_major_from_version_json(version_id: &str) -> Result<u32, String> {
+    // 安全化 id(防路径穿越,与其他命令一致)
+    if version_id.is_empty() || version_id.contains('/') || version_id.contains('\\') || version_id.contains("..") {
+        return Err("非法的版本 id".to_string());
+    }
+    let path = crate::commands::download::game_dir()
+        .join("versions")
+        .join(version_id)
+        .join(format!("{version_id}.json"));
+    if !path.is_file() {
+        return Err(format!("未找到版本说明书: {}", path.display()));
+    }
+    let raw = std::fs::read_to_string(&path).map_err(|e| format!("读取版本说明书失败: {e}"))?;
+    let v: serde_json::Value = serde_json::from_str(&raw).map_err(|e| format!("解析版本说明书失败: {e}"))?;
+    let major = v
+        .get("javaVersion")
+        .and_then(|j| j.get("majorVersion"))
+        .and_then(|m| m.as_u64())
+        .ok_or_else(|| "版本说明书缺少 javaVersion.majorVersion 字段".to_string())?;
+    u32::try_from(major).map_err(|_| format!("非法的 majorVersion: {major}"))
+}
+
+/// L5 路径归一化 key(用于去重比较)
+fn normalize_path_key(s: &str) -> String {
+    #[cfg(windows)]
+    {
+        s.to_ascii_lowercase()
+    }
+    #[cfg(not(windows))]
+    {
+        s.to_string()
+    }
+}
+
+/// L5:逐个 spawn `java -version` 探活,失败的候选跳过(不报错)
+/// 用 `tokio::process::Command` + 并发,但串行 OK —— 一般就几个候选
+async fn probe_candidates(paths: Vec<(PathBuf, JavaSource)>) -> Vec<JavaCandidate> {
+    let mut out = Vec::new();
+    for (path, source) in paths {
+        if let Some(version) = probe_one(&path).await {
+            out.push(JavaCandidate {
+                path: path.to_string_lossy().to_string(),
+                version,
+                source,
+                meets_requirement: false,
+            });
+        }
+        // 探活失败 → 跳过该候选(教学:扫描天然尽力)
+    }
+    out
+}
+
+/// L5:对一个候选路径 spawn `java -version`,返回主版本号(或 None 表示失败)
+async fn probe_one(path: &Path) -> Option<u32> {
+    use tokio::process::Command;
+    // JDK 11+ `java -version` 输出走 stderr; 旧版走 stdout —— 都要收
+    let output = Command::new(path).arg("-version").output().await.ok()?;
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    parse_java_version(&combined)
 }
 
 /// L5:从 JAVA_HOME + PATH 环境变量收集候选 java.exe 路径(全平台)。
@@ -503,5 +614,23 @@ OpenJDK 64-Bit Server VM (build 25.412-b08, mixed mode)
         for path in &result {
             println!("  - {}", path.display());
         }
+    }
+
+    /// L5 测试 18:`read_required_major_from_version_json` 接受合法 id,缺文件报清晰错
+    #[test]
+    fn read_required_major_rejects_missing_version_json() {
+        let result = read_required_major_from_version_json("definitely-not-a-real-version-id");
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(msg.contains("未找到") || msg.contains("版本"), "err 应说明问题: {msg}");
+    }
+
+    /// L5 测试 19:`read_required_major_from_version_json` 拒绝路径穿越
+    #[test]
+    fn read_required_major_rejects_path_traversal() {
+        assert!(read_required_major_from_version_json("../etc").is_err());
+        assert!(read_required_major_from_version_json("a/b").is_err());
+        assert!(read_required_major_from_version_json(r"a\b").is_err());
+        assert!(read_required_major_from_version_json("..").is_err());
     }
 }

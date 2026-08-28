@@ -227,7 +227,7 @@ fn verify_sha1(bytes: &[u8], expected: &str) -> bool {
 
 /// 游戏根目录:便携模式——放在可执行文件旁边(PCL/HMCL 便携版同思路),
 /// 与当前工作目录无关,打包发布后也能正常工作
-fn game_dir() -> PathBuf {
+pub(crate) fn game_dir() -> PathBuf {
     std::env::current_exe()
         .expect("无法获取可执行文件路径")
         .parent()
