@@ -51,6 +51,25 @@ commits: <base-sha>..<head-sha> # filled at delivery
 
 **Journey log(L4)** — `ZipFile` 实现了非 Send 的 `dyn Read`,直接放进 async 任务会编译期报错(E0277 future 不 Send)→ 正确姿势是 `spawn_blocking` 丢进阻塞线程池(zip 解压是 CPU 密集工作,也不该占异步运行时);LWJGL 3.4 的 natives jar 是"胖 jar"(一包三架构),只在真实 26.2 数据上才暴露——教学预估"1 套 dll"是错的,以实测定 3 套为准。
 
+**L5:Java 发现(2026-08-28 完成)**
+
+- 后端:新增 `scan_java_installations(version_id)` 命令(#[tauri::command]),内部从4 个来源(JAVA_HOME / PATH / Windows 常见路径 / Windows 注册表)收候选 → 同 path 多源去重(优先级 JAVA_HOME > PATH > CommonDir > Registry,Windows 路径 ASCII 小写归一化)→ 逐个 spawn `java -version` 探活取真实主版本(支持 JDK 9+ `version "25"` 现代格式 + JDK 8 `version "1.8.0_412"` 旧格式特判)→ 标记 `meets_requirement = (candidate.version >= required_major)`
+- 纯逻辑 TDD 共 18 个测试(已全部 passed,1 ignored 为注册表 smoke test):
+  - `parse_java_version`: modern / legacy(1.8.0_412 → 8)/ garbage(None,空字符串、空 version、非数字)
+  - `meets_requirement`: 6 个边界(等号、超配、低配、JDK 1 起点)
+  - `dedupe_candidates`: 同 path 优先级保留、不同 path 不去重、Windows 大小写归一化
+  - `parse_env_paths`: JAVA_HOME 优先 / 无 JAVA_HOME / 全空 / 空 JAVA_HOME 字符串
+  - `looks_like_jdk_dir`: jdk- / zulu / temurin- / openjdk- 前缀识别
+  - `discover_from_common_dirs`: temp_dir fixture 真实 IO + 不存在目录跳过
+  - `format_registry_java_home`: 纯函数单元测
+  - `read_required_major_from_version_json`: 路径穿越防护(拒 `../` `/` `\` `..`)
+- 新增依赖:`winreg = "0.52"`(Windows 注册表读取,`cfg(windows)` 隔离);`tokio` 加 `process` feature;`download::game_dir` 改 `pub(crate)` 跨模块共用
+- 前端:新增 `useVersionJava` hook(状态机 idle / scanning / done / error,带 reset) + VersionCard 新增 [Java] 按钮 + Chakra Modal 渲染(按 `meets_requirement` 分两组:满足项置顶 + 绿色 v 标 + 来源 Badge;不满足项灰显 + 来源 Badge;无候选时显示提示文案)
+
+**Verification(L5)** — `cargo test --lib` = **34 passed / 0 failed / 2 ignored**;`npm run build` ✓;e2e smoke test(`cargo test --lib -- --ignored e2e_scan_26_2`)真实跑通:本机发现 4 个 Java(JDK 17/21/25 来自注册表 + JDK 25 来自 PATH `Oracle\Java\javapath\`),其中 2 个满足 26.2 的 Java 25+ 要求。
+
+**Journey log(L5)** — `std::env::path_separator()` 不存在,正确做法是 `cfg!(windows)` 字面常量 `;` / `:`;Windows 上 `PathBuf::eq` **不**自动大小写不敏感(NTFS 大小写不敏感但 std path 比较走精确字节),必须显式 `to_ascii_lowercase()` 作归一化 key,否则 dedupe 失效(教学点:不要假设 OS 文件系统大小写规则 = Rust API 行为);`tokio::process::Command` 默认 feature 不含,必须 `features = ["process"]`;cargo test 下 `current_exe()` 锚到 `target/debug/deps/`,不是 `target/debug/`,集成测试若依赖 `game_dir()` 找版本说明书要绕开(本课 e2e 测试改用 `current_exe().parent().parent()` 显式回退一层);「尽力扫描」语义体现在每来源错误 swallow 继续(注册表无权限、目录不存在、java 不可执行)→ 不阻断整体。
+
 ## [S1] Problem
 
 M1(Mojang 版本清单)已上线,但用户只能"看列表",不能下载、不能启动。M2 的目标是打通"下载 → 启动"链路,并保持教学优先:每一步拆成独立小课(L1~L6),每课一个可验证的小功能。
@@ -298,5 +317,5 @@ L5 给出候选 Java 路径,L6:
 - [x] T-L2: client.jar 下载 + sha1 校验 —— acceptance: `cargo test` 全绿(sha1/verify/解析 3 测试);`npm run build` 通过;`tauri dev` 点「客户端」后 `versions/<id>/client.jar` 落盘(≈37MB 真实数据),按钮状态正确;篡改说明书中的 sha1 后点下载应报"校验失败" (covers: S2)
 - [x] T-L3: assets 资源下载 —— acceptance: `cargo test` 全绿(assetIndex 解析 / 内容寻址路径 / verify 复用);`npm run build` 通过;`tauri dev` 点「资源」后 `assets/indexes/32.json` 落盘 + 首次全量下载 5057 文件(479,185,985 B),再点一次 skipped 全量(增量验证);篡改 index 中某文件 hash 后应报错 (covers: S2)
 - [x] T-L4: libraries 下载 + natives 解压(rules 过滤 / sha1 校验 / 并发 8 / 路径穿越防护 / 胖 jar 架构裁剪)—— acceptance: `cargo test` 全绿(rules 过滤 / native 识别 / 安全路径 / 架构裁剪 共 6 测试);`npm run build` 通过;`tauri dev` 点「库」后 `libraries/` 落盘 Windows 所需 jar(~86MB)+ `versions/26.2/natives/` 只含 x64 架构 dll(无 arm64/x86/META-INF);再点一次 skipped 全量;篡改某 jar sha1 后应报错 (covers: S2)
-- [ ] T-L5: Java 发现(扫描 + 版本适配,见 [S2]/L5)—— acceptance: `cargo test` 全绿(parse_java_version 新旧格式 / meets_requirement / dedupe_candidates / discover_from_env / discover_from_common_dirs / discover_from_registry mock 共 ≥6 测试);`npm run build` 通过;`tauri dev` 点 26.2「Java」→ 弹 Modal 列出本机所有 Java 候选(适配 Java 25 的置顶,标 source),未检测到 Java 时显示提示文案;注册表无访问权限时不阻断整体(降级继续) (covers: S2)
+- [x] T-L5: Java 发现(扫描 + 版本适配,见 [S2]/L5)—— acceptance: `cargo test` 全绿(parse_java_version 新旧格式 / meets_requirement / dedupe_candidates / discover_from_env / discover_from_common_dirs / discover_from_registry mock 共 ≥6 测试);`npm run build` 通过;`tauri dev` 点 26.2「Java」→ 弹 Modal 列出本机所有 Java 候选(适配 Java 25 的置顶,标 source),未检测到 Java 时显示提示文案;注册表无访问权限时不阻断整体(降级继续) (covers: S2)
 - [ ] T-L6: 启动参数 + 进程拉起(离线) (covers: S2)
