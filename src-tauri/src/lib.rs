@@ -13,7 +13,9 @@ pub fn run() {
             commands::java::scan_java_installations,
             commands::launch::launch_version,
             commands::settings::load_settings,
-            commands::settings::save_settings
+            commands::settings::save_settings,
+            commands::instances::list_instances,
+            commands::instances::kill_running_instance
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

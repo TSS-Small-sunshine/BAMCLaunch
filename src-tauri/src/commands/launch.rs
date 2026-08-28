@@ -335,6 +335,16 @@ pub async fn launch_version(
     )
     .map_err(|e| format!("spawn java 失败: {e}"))?;
 
+    // L8:登记到 running.json + 启动后台 watcher(进程退出自动清理)
+    let instance = super::instances::RunningInstance {
+        pid,
+        version_id: version_id.clone(),
+        java_path: effective_java_path.clone(),
+        started_at: chrono::Utc::now(),
+    };
+    super::instances::register_instance(instance);
+    super::instances::spawn_exit_watcher(pid);
+
     Ok(LaunchResult {
         pid,
         java_path: effective_java_path,

@@ -174,8 +174,9 @@ pub async fn kill_instance(pid: u32) -> Result<KillResult, String> {
     }
 }
 
-/// L8:杀进程结果分类
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// L8:杀进程结果分类(Serialize 给前端用)
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum KillResult {
     /// 进程已不存在(可能早退)
     AlreadyGone,
@@ -183,6 +184,54 @@ pub enum KillResult {
     TerminatedBySigterm,
     /// 强杀(SIGKILL / taskkill /F)
     ForceKilled,
+}
+
+/// L8:列出运行中实例(过滤已死的)— 启动器主入口 / 「实例」页用
+#[tauri::command]
+pub fn list_instances() -> Vec<RunningInstance> {
+    let mut r = RunningInstances::load();
+    // 过滤掉已死的进程
+    r.instances.retain(|i| is_pid_alive(i.pid));
+    // 顺手把过滤结果保存(清理 running.json)
+    let _ = r.save();
+    r.instances
+}
+
+/// L8:杀进程 UI 调用 — 自动从 running.json 移除
+#[tauri::command]
+pub async fn kill_running_instance(pid: u32) -> Result<KillResult, String> {
+    let result = kill_instance(pid).await?;
+    if matches!(result, KillResult::ForceKilled | KillResult::TerminatedBySigterm | KillResult::AlreadyGone) {
+        let mut r = RunningInstances::load();
+        r.remove(pid);
+        let _ = r.save();
+    }
+    Ok(result)
+}
+
+/// L8:L6 launch 启动后调用 — 登记实例 + 后台 task 等退出自动 remove
+pub fn register_instance(instance: RunningInstance) {
+    let mut r = RunningInstances::load();
+    r.add(instance);
+    let _ = r.save();
+}
+
+/// L8:L6 launch 后台 task —— 进程退出后从 running.json 移除
+/// 教学:tokio::process::Child 自带 wait(),但我们要 PID 层面的清理(因为我们没保留 Child)
+/// 这里 spawn 一个轮询 task:每 2 秒检查 is_pid_alive,死了就 remove
+pub fn spawn_exit_watcher(pid: u32) {
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            if !is_pid_alive(pid) {
+                let mut r = RunningInstances::load();
+                if r.remove(pid) {
+                    let _ = r.save();
+                }
+                break;
+            }
+        }
+    });
 }
 
 #[cfg(test)]
