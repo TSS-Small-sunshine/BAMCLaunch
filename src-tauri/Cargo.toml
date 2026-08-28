@@ -23,11 +23,18 @@ tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.13.4", features = ["json"] }
-tokio = { version = "1", features = ["fs", "rt", "process"] }
+tokio = { version = "1", features = ["fs", "rt", "rt-multi-thread", "process", "macros", "time"] }
 sha1 = "0.10"
 zip = "2"
 winreg = "0.52"
 uuid = { version = "1", features = ["v3"] }
 md-5 = "0.11"
 digest = "0.11"
+chrono = { version = "0.4", features = ["serde"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_Threading", "Win32_Foundation"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
