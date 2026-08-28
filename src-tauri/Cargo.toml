@@ -28,4 +28,6 @@ sha1 = "0.10"
 zip = "2"
 winreg = "0.52"
 uuid = { version = "1", features = ["v3"] }
+md-5 = "0.11"
+digest = "0.11"
 
