@@ -101,8 +101,41 @@ fn discover_from_registry() -> Vec<PathBuf> {
 }
 
 /// L5:同 path 多源命中只保留优先级最高的(JAVA_HOME > PATH > CommonDir > Registry)。
+/// 路径规范化:Windows 上 ASCII 小写归一化(NTFS 大小写不敏感),Linux 上保持原样。
 fn dedupe_candidates(candidates: Vec<JavaCandidate>) -> Vec<JavaCandidate> {
-    todo!("TDD")
+    // 优先级数值 —— 数字越小优先级越高
+    fn priority(s: JavaSource) -> u8 {
+        match s {
+            JavaSource::JavaHome => 0,
+            JavaSource::Path => 1,
+            JavaSource::CommonDir => 2,
+            JavaSource::Registry => 3,
+        }
+    }
+    // Windows 路径归一化:NTFS 大小写不敏感,但 std::path 的 PathBuf::eq 是精确字节比较
+    // → 显式 ASCII 小写化作 key
+    #[cfg(windows)]
+    fn normalize_key(path: &str) -> String {
+        path.to_ascii_lowercase()
+    }
+    #[cfg(not(windows))]
+    fn normalize_key(path: &str) -> String {
+        path.to_string()
+    }
+    use std::collections::HashMap;
+    let mut best: HashMap<String, JavaCandidate> = HashMap::new();
+    for cand in candidates {
+        let key = normalize_key(&cand.path);
+        match best.get(&key) {
+            Some(existing) if priority(existing.source) <= priority(cand.source) => {
+                // 已存在,且现有优先级更高或相同 → 跳过
+            }
+            _ => {
+                best.insert(key, cand);
+            }
+        }
+    }
+    best.into_values().collect()
 }
 
 /// L5:候选 version 与 required_major 比较。
@@ -164,5 +197,56 @@ OpenJDK 64-Bit Server VM (build 25.412-b08, mixed mode)
         // 边界 —— 最低需求 1(任何 Java 都满足,虽然实际不太可能)
         assert!(meets_requirement(1, 1));
         assert!(meets_requirement(8, 1));
+    }
+
+    /// L5 测试 5:同 path 多源去重 —— 保留优先级最高的(JAVA_HOME > PATH > CommonDir > Registry)
+    /// 教学点:扫描完 4 个来源后,我们可能拿到同一 java.exe 的多条记录(比如 JAVA_HOME 装的 + 在 PATH 里),
+    /// 只展示一条,且该条应来自最权威的源
+    #[test]
+    fn dedupe_keeps_highest_priority_source() {
+        let candidates = vec![
+            mk_cand("/jdk/bin/java.exe", 17, JavaSource::Registry),
+            mk_cand("/jdk/bin/java.exe", 17, JavaSource::CommonDir),
+            mk_cand("/jdk/bin/java.exe", 17, JavaSource::Path),
+            mk_cand("/jdk/bin/java.exe", 17, JavaSource::JavaHome),
+        ];
+        let deduped = dedupe_candidates(candidates);
+        assert_eq!(deduped.len(), 1, "4 条同 path 应该合成 1 条");
+        assert_eq!(deduped[0].source, JavaSource::JavaHome, "优先级最高的应保留");
+    }
+
+    /// L5 测试 6:不同 path 不去重 —— 普通情况,4 个不同 java.exe 应保留
+    #[test]
+    fn dedupe_keeps_different_paths() {
+        let candidates = vec![
+            mk_cand("/jdk17/bin/java.exe", 17, JavaSource::JavaHome),
+            mk_cand("/jdk21/bin/java.exe", 21, JavaSource::Path),
+            mk_cand("/jdk25/bin/java.exe", 25, JavaSource::CommonDir),
+        ];
+        let deduped = dedupe_candidates(candidates);
+        assert_eq!(deduped.len(), 3);
+    }
+
+    /// L5 测试 7:路径规范化后再去重 —— `C:\jdk\bin\java.exe` 与 `C:\JDK\bin\java.exe` (Windows 大小写不敏感)
+    /// 实测行为:dunce 化用 std::path 比较 PathBuf,Windows 上大小写不敏感
+    #[test]
+    fn dedupe_normalizes_windows_paths() {
+        let candidates = vec![
+            mk_cand("C:\\jdk\\bin\\java.exe", 17, JavaSource::Registry),
+            mk_cand("C:\\JDK\\BIN\\java.exe", 17, JavaSource::JavaHome),
+        ];
+        let deduped = dedupe_candidates(candidates);
+        assert_eq!(deduped.len(), 1, "Windows 大小写不敏感,应视为同 path");
+        assert_eq!(deduped[0].source, JavaSource::JavaHome);
+    }
+
+    /// 构造测试用的候选(同 path + 不同 source 时便于读)
+    fn mk_cand(path: &str, version: u32, source: JavaSource) -> JavaCandidate {
+        JavaCandidate {
+            path: path.to_string(),
+            version,
+            source,
+            meets_requirement: false,
+        }
     }
 }
