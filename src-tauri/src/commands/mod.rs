@@ -1,6 +1,7 @@
 pub mod download;
 pub mod java;
 pub mod launch;
+pub mod settings;
 pub mod version;
 
 use reqwest::Client;
