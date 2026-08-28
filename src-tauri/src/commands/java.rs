@@ -106,8 +106,9 @@ fn dedupe_candidates(candidates: Vec<JavaCandidate>) -> Vec<JavaCandidate> {
 }
 
 /// L5:候选 version 与 required_major 比较。
+/// 语义:`>=` — 等号算满足。MC 26.2 要 Java 25,装 25/26/27 都满足,装 17/21 不满足。
 fn meets_requirement(candidate_version: u32, required_major: u32) -> bool {
-    todo!("TDD")
+    candidate_version >= required_major
 }
 
 #[cfg(test)]
@@ -144,5 +145,24 @@ OpenJDK 64-Bit Server VM (build 25.412-b08, mixed mode)
         assert_eq!(parse_java_version("not java at all"), None);
         assert_eq!(parse_java_version(r#"version """#), None); // 空 version 段
         assert_eq!(parse_java_version(r#"version "abc""#), None); // 非数字
+    }
+
+    /// L5 测试 4:版本适配判定 —— 等号算满足,低于不满足,超过满足
+    /// 教学点:`>=` 是「最小版本」的语义 —— 26.2 要 25,装 25 能跑,装 26 也能跑
+    #[test]
+    fn meets_requirement_edge_cases() {
+        // 边界 —— 等号
+        assert!(meets_requirement(25, 25), "等号必须满足");
+        // 刚好超 1
+        assert!(meets_requirement(26, 25), "高一个主版本也满足");
+        // 高很多
+        assert!(meets_requirement(99, 25), "高很多也满足(过度适配)");
+        // 低 1
+        assert!(!meets_requirement(24, 25), "低一个主版本不满足");
+        // 差很远
+        assert!(!meets_requirement(8, 25), "老 JDK 不满足新 MC");
+        // 边界 —— 最低需求 1(任何 Java 都满足,虽然实际不太可能)
+        assert!(meets_requirement(1, 1));
+        assert!(meets_requirement(8, 1));
     }
 }
