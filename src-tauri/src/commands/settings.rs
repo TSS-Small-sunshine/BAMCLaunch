@@ -137,6 +137,34 @@ pub fn validate_jvm_memory(min: u32, max: u32) -> Result<(), String> {
     Ok(())
 }
 
+/// L7:加载当前设置(前端设置页初始化)
+#[tauri::command]
+pub fn load_settings() -> Settings {
+    Settings::load()
+}
+
+/// L7:保存设置(前端「保存」按钮调用) — 校验 + 原子写盘
+#[tauri::command]
+pub fn save_settings(settings: Settings) -> Result<(), String> {
+    // 1) 校验 Java 路径
+    if let Some(path) = &settings.java.path {
+        validate_java_path(path)?;
+    }
+    // 2) 校验 JVM 内存
+    validate_jvm_memory(settings.jvm.min_memory_mb, settings.jvm.max_memory_mb)?;
+    // 3) 校验 game_dir override(若有,应是绝对路径)
+    if let Some(gd) = &settings.game_dir {
+        if !gd.is_empty() {
+            let p = std::path::Path::new(gd);
+            if !p.is_absolute() {
+                return Err(format!("游戏目录必须是绝对路径: {gd}"));
+            }
+        }
+    }
+    // 4) 保存
+    settings.save()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
