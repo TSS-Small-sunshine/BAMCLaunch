@@ -290,16 +290,113 @@ Out of scope:
 
 新增依赖:`winreg = "0.52"`(Windows 注册表读写,Linux/macOS 上此模块不可用,L5 用 cfg(windows) 隔离,其他平台该函数返回空 Vec)
 
-### L6:启动参数拼接 + 进程拉起(设计,待细化)
+### L6:启动参数拼接 + 进程拉起(设计,2026-08-29)
 
-L5 给出候选 Java 路径,L6:
-1. 选定 Java 后,把所有 libraries/ jar + client.jar 拼成 `-cp` 参数
-2. 读 `<id>.json` 的 `arguments.jvm[]`(含 rules 过滤)拼 JVM 参数
-3. 读 `arguments.game[]` 拼游戏参数(暂以离线模式填充占位:玩家名 `Player`、UUID 离线生成、accessToken 留空)
-4. `tokio::process::Command::new(java_path).args(...).spawn()` 拉起游戏
-5. 实时把 stdout/stderr 推到前端(Webview 内的 console 或独立日志页;M3)
+L5 给出候选 Java 路径,L6 用它 + 说明书 + 物料拼出**完整 java 命令**并 spawn 游戏进程。M2 的最后一课 — 至此**读说明书 → 买齐物料 → 组装 → 启动**全链路打通。
 
-具体细化在 T-L5 验收后再写(避免一次性设计过远)。
+**教学点 1 — Classpath 拼装**:把所有 .jar 文件路径用平台分隔符串起来,作为 `-cp` 参数值:
+```
+# Windows 用 `;` 分隔,Linux/macOS 用 `:`
+-cp "versions/<id>/client.jar;libraries/at/yawk/lz4/lz4-java/1.10.1/lz4-java-1.10.1.jar;..."
+```
+顺序无所谓(Minecraft 自己从 manifest 找主类),但必须**全部** — 缺一个 native 就崩 `NoClassDefFoundError`。L4 已按当前平台 rules 下载,这里**遍历 `libraries/` 目录拿到所有 jar** 即可(rules 过滤已经在下载阶段做完)。
+
+**教学点 2 — `arguments.jvm[]` / `arguments.game[]` 是混合数组**:每项要么是纯字符串(`"-Xmx4G"`、`"--username"`),要么是带 `rules` 的对象(只有当前平台/feature 满足才加)。语义:
+- **无 rules → 永远加入**
+- **有 rules → 最后一条匹配的规则定夺**(同 libraries.rules)
+
+rules 过滤维度有三类:
+- `os.name` / `os.arch` / `os.version`(`"windows" / "linux" / "osx"`,arch `"x86" / "x86_64"` 等)
+- `features.{name}`(`is_demo_user` / `has_custom_resolution` / `has_quick_plays_support` / `is_quick_play_*`)
+- 真实 26.2 实测 rules 只用 `os.name`(无 arch、无 disallow、无 features)— 简化实现
+
+**教学点 3 — 占位符替换**:`arguments.jvm[]` 和 `arguments.game[]` 里的 `${name}` 必须替换为具体值。L6 离线模式占位符全集:
+
+| 占位符 | 离线值 |
+|---|---|
+| `${natives_directory}` | `<game_dir>/versions/<id>/natives`(注意:`-Djava.library.path=${natives_directory}/java`,需要拼 `/java` 子目录) |
+| `${classpath}` | 拼好的 cp 字符串 |
+| `${version_name}` | `<id>` |
+| `${game_directory}` | `<game_dir>`(exe 旁 `.bamcl-dev/`) |
+| `${assets_root}` | `<game_dir>/assets` |
+| `${assets_index_name}` | `<id>.json` 的 `assets` 字段(26.2 为 `"32"`) |
+| `${auth_player_name}` | `"Player"` |
+| `${auth_uuid}` | 离线生成的 UUID(`UUID.nameUUIDFromBytes("OfflinePlayer:Player".bytes)`) |
+| `${auth_access_token}` | `""`(离线模式) |
+| `${auth_xuid}` | `""`(离线模式) |
+| `${version_type}` | `<id>.json` 的 `type` 字段 |
+| `${launcher_name}` / `${launcher_version}` | `"BAMCLaunch"` / `"0.1.0"` |
+| `${clientid}` / `${user_type}` / `${resolution_width}` 等 | `""`(未涉及的 features 占位符按需给空串) |
+| `${quickPlay*}` | `""`(M3 才接 quick play) |
+
+**教学点 4 — 进程拉起参数**:
+- `tokio::process::Command::new(java_path)`
+- `.args(jvm_args_with_placeholders_replaced)`
+- `.arg("<main_class>")`  例如 `net.minecraft.client.main.Main`
+- `.args(game_args_with_placeholders_replaced)`
+- `.current_dir(game_dir)` — **关键**: Minecraft 启动时用相对路径找 `versions/`、`assets/` 等
+- `.stdout(Stdio::piped()).stderr(Stdio::piped())` — 留 stdout/stderr 读取通道(L6 暂时不消费,M3 console panel 用)
+- `.spawn()` → `Child { id, ... }` → **返回 PID + Java path**(给前端显示「已启动」)
+
+**教学点 5 — L6 的边界**:
+- **不消费 stdout/stderr** — 进程后台跑,启动器不阻塞。读日志留到 M3 做 console panel
+- **不持久化进程**(不存 PID) — 关窗口不杀进程,玩家自己管;杀进程/查进程留到 M3
+- **不做微软登录** — 离线模式固定占位符。微软 OAuth 是 M4+
+- **不做 mods / 整合包** — 纯 vanilla 启动
+- **不做内存设置** — 用默认 JVM 参数(`arguments.jvm[]` 里硬编码的 `-Xmx4G` 等),玩家可在设置里覆盖(M3)
+
+**数据流**:
+
+```
+[启动]按钮 (新, 取代当前 disabled 状态)
+  → invoke("launch_version", { versionId, javaPath })
+  → Rust:
+     1. 读 <id>.json → mainClass + arguments.jvm/game/libraries/assets
+     2. 拼 classpath:遍历 libraries/*.jar + versions/<id>/client.jar + <id>/<id>.json
+     3. 拼 JVM args:遍历 arguments.jvm[], rules 过滤, 替换 ${...}
+     4. 拼 game args:遍历 arguments.game[], rules 过滤, 替换 ${...}
+     5. spawn java process
+  → 返回 { pid, java_path } → 前端按钮变「启动中」(其实游戏已跑)
+```
+
+**契约**:
+
+- `launch_version(version_id: String, java_path: String) -> Result<LaunchResult, String>`,其中 `LaunchResult { pid: u32, java_path: String }`(serde Serialize)
+- `current_os() -> OsKind`(`"windows" | "linux" | "osx"`)— 内部用,不在契约
+- `arg_rule_applies(rule: &ArgRule, os: OsKind, features: &HashSet<String>) -> bool` — 教学:rules 语义"最后一条匹配的定夺"
+- `expand_placeholders(text: &str, vars: &HashMap<String, String>) -> String` — 教学:`${xxx}` 替换,未匹配保留原样(或报错)
+- `build_classpath(version_id: &str, libraries_dir: &Path) -> Result<String, String>` — 平台分隔符拼 jar 路径
+- `spawn_game_process(java_path: &Path, args: &[String], cwd: &Path) -> Result<u32, String>` — tokio::process::Command
+
+**纯逻辑 TDD**(预计新增 ~6 个测试):
+
+- `fn arg_rule_applies_simple_os_match` — os.name="windows", rule 也是 "windows" → 通过
+- `fn arg_rule_applies_no_match` — os.name="windows", rule 是 "linux" → 不通过
+- `fn arg_rule_applies_arch` — os.arch="x86_64", rule arch "x86" → 不通过
+- `fn arg_rule_picks_last_match` — 多条 rule, 最后一条 "allow" 胜出
+- `fn expand_placeholders_basic` — `${foo}` → 替换值
+- `fn expand_placeholders_no_match_leaves_intact` — 未匹配保留 `${...}`
+- `fn expand_placeholders_multiple` — 多个占位符同字符串
+- `fn build_classpath_joins_jars_with_platform_separator` — classpath 拼接(用临时 fixture 测,只测 jar 列表遍历逻辑,不真 spawn)
+
+**新增依赖**:`uuid = "1"`(离线 UUID 生成;`UUID.nameUUIDFromBytes` 是 JDK 标准但我们是 Rust 侧算,因为 Java 还在外面没启动)
+
+**前端**: VersionCard 取代当前 disabled 「启动」按钮。新按钮状态机:`idle → launching → launched(pid)` / `error`。launched 状态显示 PID + 「再次启动」。
+
+**UI**: 启动按钮跟 [Java] 紧邻,launched 后绿色 outline + 「已启动 (pid 1234)」Tooltip。
+
+布局: 不写新文件 — 启动不产生任何磁盘产物(进程在内存)。游戏目录仍是 `.bamcl-dev/`(L1 已锚定)。
+
+**Out of scope**:
+- 读游戏 stdout/stderr 推到前端(M3 console panel)
+- 进程管理:列出运行中的 MC、杀进程、kill(M3)
+- 设置:Java 路径选择 / 内存 / JVM 参数覆盖(M3)
+- 微软账户登录(M4+)
+- mods / 整合包(M5+)
+- 跨进程通信:游戏关 → 自动清理(M3+)
+- 自动化测试 spawn 测试(`#[ignore]` e2e smoke 类似 L5,默认不跑)
+
+具体细化到此。
 
 ## [S3] Out of Scope
 
@@ -308,8 +405,11 @@ L5 给出候选 Java 路径,L6:
 - L5 仅做 Windows 扫描路径;macOS/Linux 路径细化等真上跨平台时补
 - **Java 自下载**(玩家自己装系统 Java;L5 只发现不下载)
 - **手动指定 Java 路径**的设置持久化(M3)
-- **真启动游戏**(L6)
-- 自动化测试(沿用 M1 约定:验证 = `npm run build` + `cargo check` + `tauri dev` 手动;但 L5 加 TDD 因为有 4 个纯函数 + 正则解析值得测)
+- L6:读游戏 stdout/stderr 推到前端(M3 console panel)
+- L6:进程管理 — 列出 / 杀 / 自动清理(M3)
+- L6:设置 — Java 路径选择 / 内存 / JVM 参数覆盖(M3)
+- L6:微软账户登录(M4+)、mods/整合包(M5+)
+- 自动化测试(沿用 M1 约定:验证 = `npm run build` + `cargo check` + `tauri dev` 手动;L5/L6 加 TDD 是因为有纯函数 + 正则/规则过滤值得测)
 
 ## Tasks
 
@@ -318,4 +418,4 @@ L5 给出候选 Java 路径,L6:
 - [x] T-L3: assets 资源下载 —— acceptance: `cargo test` 全绿(assetIndex 解析 / 内容寻址路径 / verify 复用);`npm run build` 通过;`tauri dev` 点「资源」后 `assets/indexes/32.json` 落盘 + 首次全量下载 5057 文件(479,185,985 B),再点一次 skipped 全量(增量验证);篡改 index 中某文件 hash 后应报错 (covers: S2)
 - [x] T-L4: libraries 下载 + natives 解压(rules 过滤 / sha1 校验 / 并发 8 / 路径穿越防护 / 胖 jar 架构裁剪)—— acceptance: `cargo test` 全绿(rules 过滤 / native 识别 / 安全路径 / 架构裁剪 共 6 测试);`npm run build` 通过;`tauri dev` 点「库」后 `libraries/` 落盘 Windows 所需 jar(~86MB)+ `versions/26.2/natives/` 只含 x64 架构 dll(无 arm64/x86/META-INF);再点一次 skipped 全量;篡改某 jar sha1 后应报错 (covers: S2)
 - [x] T-L5: Java 发现(扫描 + 版本适配,见 [S2]/L5)—— acceptance: `cargo test` 全绿(parse_java_version 新旧格式 / meets_requirement / dedupe_candidates / discover_from_env / discover_from_common_dirs / discover_from_registry mock 共 ≥6 测试);`npm run build` 通过;`tauri dev` 点 26.2「Java」→ 弹 Modal 列出本机所有 Java 候选(适配 Java 25 的置顶,标 source),未检测到 Java 时显示提示文案;注册表无访问权限时不阻断整体(降级继续) (covers: S2)
-- [ ] T-L6: 启动参数 + 进程拉起(离线) (covers: S2)
+- [ ] T-L6: 启动参数 + 进程拉起(离线,见 [S2]/L6)—— acceptance: `cargo test` 全绿(arg_rule_applies os/arch/last-match / expand_placeholders basic/no-match/multiple / build_classpath 平台分隔符 / rules 过滤实战 26.2.json 共 ≥6 测试);`npm run build` 通过;`tauri dev` 点 26.2「启动」+ Java 25 → spawn 成功, 按钮变「已启动 (pid X)」;`tauri dev` 终端应能看到 MC 启动日志刷屏(代表 stdout 走通);若 26.2 已下完整物料(json + jar + assets + libraries + natives),首次启动应能进 MC 主菜单(不要求登录微软,离线玩家名 Player) (covers: S2)
