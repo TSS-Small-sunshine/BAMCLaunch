@@ -110,3 +110,24 @@ export function loadSettings(): Promise<Settings> {
 export function saveSettings(settings: Settings): Promise<void> {
   return invoke<void>("save_settings", { settings });
 }
+
+/** L8:运行中的实例(自动清理掉已退出的进程) */
+export interface RunningInstance {
+  pid: number;
+  version_id: string;
+  java_path: string;
+  started_at: string;
+}
+
+/** L8:列出运行实例(后端会过滤已死的 + 顺手保存清理) */
+export function listInstances(): Promise<RunningInstance[]> {
+  return invoke<RunningInstance[]>("list_instances");
+}
+
+/** L8:杀进程结果分类 */
+export type KillResult = "already_gone" | "terminated_by_sigterm" | "force_killed";
+
+/** L8:杀进程 UI 调用 — 自动从 running.json 移除 */
+export function killRunningInstance(pid: number): Promise<KillResult> {
+  return invoke<KillResult>("kill_running_instance", { pid });
+}

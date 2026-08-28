@@ -3,6 +3,7 @@ import { Routes, Route } from "react-router-dom";
 import TitleBar from "./components/TitleBar";
 import Sidebar from "./components/Sidebar";
 import HomePage from "./pages/HomePage";
+import InstancesPage from "./pages/InstancesPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
 import SettingsPage from "./pages/SettingsPage";
 
@@ -18,6 +19,7 @@ export default function App() {
             <Route path="/" element={<HomePage />} />
             <Route path="/download" element={<PlaceholderPage kind="download" />} />
             <Route path="/accounts" element={<PlaceholderPage kind="accounts" />} />
+            <Route path="/instances" element={<InstancesPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </Box>
