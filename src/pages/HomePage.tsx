@@ -4,10 +4,19 @@ import {
   Badge,
   Box,
   Button,
+  Divider,
   Flex,
+  Modal,
+  ModalBody,
+  ModalCloseButton,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  ModalOverlay,
   Skeleton,
   Text,
   Tooltip,
+  useDisclosure,
   VStack,
 } from "@chakra-ui/react";
 import { DownloadIcon, RepeatIcon } from "@chakra-ui/icons";
@@ -17,6 +26,8 @@ import { useVersionDownload } from "../hooks/useVersionDownload";
 import { useVersionJar } from "../hooks/useVersionJar";
 import { useVersionAssets } from "../hooks/useVersionAssets";
 import { useVersionLibraries } from "../hooks/useVersionLibraries";
+import { useVersionJava } from "../hooks/useVersionJava";
+import type { JavaCandidate, JavaScanResult } from "../lib/tauri";
 
 /** 把版本按 正式版/快照版 分组,并按发布时间倒序 */
 function groupVersions(versions: ManifestVersion[]) {
@@ -50,6 +61,8 @@ function VersionCard({
   const jar = useVersionJar(version.id);
   const assets = useVersionAssets(version.id);
   const libraries = useVersionLibraries(version.id);
+  const java = useVersionJava(version.id);
+  const javaModal = useDisclosure();
   return (
     <Flex
       align="center"
@@ -222,6 +235,34 @@ function VersionCard({
           </Button>
         </Tooltip>
       )}
+      <Tooltip
+        label={
+          java.state.status === "error"
+            ? java.state.message
+            : java.state.status === "done"
+              ? `已发现 ${java.state.result.candidates.length} 个 Java;适配 Java ${java.state.result.required_major} 的 ${java.state.result.candidates.filter((c) => c.meets_requirement).length} 个`
+              : "扫描本机 Java 安装并检查版本适配"
+        }
+        placement="top"
+      >
+        <Button
+          size="sm"
+          onClick={() => {
+            javaModal.onOpen();
+            if (java.state.status !== "done") {
+              void java.scan();
+            }
+          }}
+          isLoading={java.state.status === "scanning"}
+          colorScheme={java.state.status === "done" ? "grass" : undefined}
+          variant={java.state.status === "done" ? "outline" : undefined}
+        >
+          {java.state.status === "idle" && "Java"}
+          {java.state.status === "scanning" && "扫描中"}
+          {java.state.status === "done" && "Java"}
+          {java.state.status === "error" && "重试"}
+        </Button>
+      </Tooltip>
       <Tooltip label="启动功能将在后续里程碑实现" placement="top">
         <Box as="span">
           <Button size="sm" isDisabled>
@@ -229,8 +270,190 @@ function VersionCard({
           </Button>
         </Box>
       </Tooltip>
+      <JavaCandidatesModal
+        isOpen={javaModal.isOpen}
+        onClose={() => {
+          javaModal.onClose();
+          java.reset();
+        }}
+        scanState={java.state}
+        versionId={version.id}
+        onRetry={java.scan}
+      />
     </Flex>
   );
+}
+
+/** L5:Java 候选列表 Modal —— 按适配/不适配分组,源标 JAVA_HOME/PATH/CommonDir/Registry */
+function JavaCandidatesModal({
+  isOpen,
+  onClose,
+  scanState,
+  versionId,
+  onRetry,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  scanState: ReturnType<typeof useVersionJava>["state"];
+  versionId: string;
+  onRetry: () => Promise<void>;
+}) {
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} size="lg" isCentered>
+      <ModalOverlay />
+      <ModalContent borderRadius="card">
+        <ModalHeader>Java 候选 · {versionId}</ModalHeader>
+        <ModalCloseButton />
+        <ModalBody pb={4}>
+          {scanState.status === "scanning" && (
+            <Text color="gray.500" fontSize="sm">
+              正在扫描本机 Java 安装...
+            </Text>
+          )}
+          {scanState.status === "error" && (
+            <Alert status="error" borderRadius="card" bg="red.50">
+              <AlertIcon />
+              <Box>
+                <Text fontWeight="700" color="red.600" fontSize="sm">
+                  扫描失败
+                </Text>
+                <Text fontSize="xs" color="red.500" mt={1}>
+                  {scanState.message}
+                </Text>
+              </Box>
+            </Alert>
+          )}
+          {scanState.status === "done" && (
+            <JavaScanResultBody result={scanState.result} />
+          )}
+        </ModalBody>
+        <ModalFooter gap={2}>
+          {scanState.status === "done" && (
+            <Button size="sm" variant="ghost" onClick={() => void onRetry()}>
+              重新扫描
+            </Button>
+          )}
+          <Button size="sm" colorScheme="brand" onClick={onClose}>
+            关闭
+          </Button>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
+  );
+}
+
+/** L5:Modal 内文 —— 分适配/不适配两组 */
+function JavaScanResultBody({ result }: { result: JavaScanResult }) {
+  if (result.candidates.length === 0) {
+    return (
+      <Alert status="info" borderRadius="card" bg="blue.50">
+        <AlertIcon />
+        <Box>
+          <Text fontWeight="700" color="blue.700" fontSize="sm">
+            未检测到 Java 安装
+          </Text>
+          <Text fontSize="xs" color="blue.600" mt={1}>
+            请安装 Java {result.required_major}+ 或在设置中手动指定路径(M3 实装)
+          </Text>
+        </Box>
+      </Alert>
+    );
+  }
+  const meeting = result.candidates.filter((c) => c.meets_requirement);
+  const notMeeting = result.candidates.filter((c) => !c.meets_requirement);
+  return (
+    <VStack align="stretch" spacing={4}>
+      <Text fontSize="sm" color="gray.600">
+        此版本需要 <b>Java {result.required_major}+</b>,已扫描到 {result.candidates.length} 个 Java 实例
+      </Text>
+      {meeting.length > 0 && (
+        <Box>
+          <Text fontSize="xs" fontWeight="700" color="grass.600" mb={2}>
+            ✓ 满足版本要求({meeting.length})
+          </Text>
+          <VStack align="stretch" spacing={2}>
+            {meeting.map((c, i) => (
+              <JavaCandidateRow key={`m-${i}`} candidate={c} />
+            ))}
+          </VStack>
+        </Box>
+      )}
+      {notMeeting.length > 0 && (
+        <Box>
+          <Divider my={1} />
+          <Text fontSize="xs" fontWeight="700" color="gray.500" mb={2} mt={3}>
+            ✗ 版本过低或不可用({notMeeting.length})
+          </Text>
+          <VStack align="stretch" spacing={2}>
+            {notMeeting.map((c, i) => (
+              <JavaCandidateRow key={`n-${i}`} candidate={c} />
+            ))}
+          </VStack>
+        </Box>
+      )}
+    </VStack>
+  );
+}
+
+/** L5:单个 Java 候选行 —— 版本号 + 来源标签 + 路径 */
+function JavaCandidateRow({ candidate }: { candidate: JavaCandidate }) {
+  return (
+    <Flex
+      align="center"
+      gap={3}
+      bg="gray.50"
+      borderRadius="lg"
+      px={3}
+      py={2}
+    >
+      <Text
+        fontWeight="800"
+        fontSize="md"
+        color={candidate.meets_requirement ? "grass.600" : "gray.500"}
+        minW="40px"
+      >
+        v{candidate.version}
+      </Text>
+      <Badge colorScheme={sourceColor(candidate.source)} variant="subtle">
+        {sourceLabel(candidate.source)}
+      </Badge>
+      <Text
+        fontSize="xs"
+        color="gray.500"
+        noOfLines={1}
+        flex={1}
+        fontFamily="mono"
+      >
+        {candidate.path}
+      </Text>
+    </Flex>
+  );
+}
+
+function sourceColor(source: JavaCandidate["source"]): string {
+  switch (source) {
+    case "java_home":
+      return "brand";
+    case "path":
+      return "purple";
+    case "common_dir":
+      return "orange";
+    case "registry":
+      return "gray";
+  }
+}
+
+function sourceLabel(source: JavaCandidate["source"]): string {
+  switch (source) {
+    case "java_home":
+      return "JAVA_HOME";
+    case "path":
+      return "PATH";
+    case "common_dir":
+      return "CommonDir";
+    case "registry":
+      return "Registry";
+  }
 }
 
 /** 版本分组区块 */

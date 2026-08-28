@@ -40,3 +40,31 @@ export interface LibrariesSummary {
   skipped: number;
   natives: number;
 }
+
+/** L5:扫描本机 Java 安装 —— 候选来源(优先级从高到低) */
+export type JavaSource = "java_home" | "path" | "common_dir" | "registry";
+
+/** L5:扫描得到的一个候选 Java 安装 */
+export interface JavaCandidate {
+  /** java.exe 绝对路径 */
+  path: string;
+  /** 从 `java -version` 解析出的主版本号 */
+  version: number;
+  /** 这个候选是哪个来源扫到的 */
+  source: JavaSource;
+  /** 是否满足版本说明书要求的最低主版本 */
+  meets_requirement: boolean;
+}
+
+/** L5:扫描结果汇总,前端按 meets_requirement 分组渲染 */
+export interface JavaScanResult {
+  /** 从版本说明书读出来的最低主版本要求(如 26.2 要求 25) */
+  required_major: number;
+  /** 全部候选(已去重 + 已探活取版本) */
+  candidates: JavaCandidate[];
+}
+
+/** L5:扫描本机 Java 安装并取真实版本号(调 scan_java_installations 命令) */
+export function scanJavaInstallations(versionId: string): Promise<JavaScanResult> {
+  return invoke<JavaScanResult>("scan_java_installations", { versionId });
+}
