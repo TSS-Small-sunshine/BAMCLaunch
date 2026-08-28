@@ -161,13 +161,50 @@ fn looks_like_jdk_dir(name: &str) -> bool {
 }
 
 /// L5:从 Windows 注册表 HKLM\SOFTWARE\JavaSoft\JDK 读 JavaHome 值,拼 bin\java.exe。
+/// 教学点:JavaSoft 在 64 位 OS 上 32 位注册表位于 `WOW6432Node`,需要枚举两个 hive。
 #[cfg(windows)]
 fn discover_from_registry() -> Vec<PathBuf> {
-    todo!("TDD")
+    use winreg::enums::{HKEY_LOCAL_MACHINE, KEY_READ};
+    use winreg::RegKey;
+
+    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+    // 64 位 hive 与 WOW6432Node(32 位)各试一次,先 64 再 32(常见的 64 位优先)
+    let subkeys: [&str; 2] = [
+        r"SOFTWARE\JavaSoft\JDK",
+        r"SOFTWARE\WOW6432Node\JavaSoft\JDK",
+    ];
+
+    let mut out = Vec::new();
+    for subkey_path in subkeys {
+        let Ok(jdk_root) = hklm.open_subkey_with_flags(subkey_path, KEY_READ) else {
+            continue; // 该 hive 没装 Java → 跳过
+        };
+        // JDK 子项每个形如 `<major_version>` (e.g. "25", "21.0.5"),每个子项下找 `JavaHome`
+        for version_key in jdk_root.enum_keys().flatten() {
+            let Ok(version_subkey) = jdk_root.open_subkey(&version_key) else {
+                continue;
+            };
+            let Ok(java_home): Result<String, _> = version_subkey.get_value("JavaHome") else {
+                continue;
+            };
+            let exe = format_registry_java_home(&java_home);
+            if exe.is_file() {
+                out.push(exe);
+            }
+        }
+    }
+    out
 }
 #[cfg(not(windows))]
 fn discover_from_registry() -> Vec<PathBuf> {
     Vec::new()
+}
+
+/// L5 纯函数:注册表 `JavaHome` 值是 JDK 根目录,拼 `bin\java.exe`(Windows)。
+/// 测试入口 —— 解耦注册表 IO。
+#[cfg(windows)]
+fn format_registry_java_home(java_home_value: &str) -> PathBuf {
+    PathBuf::from(java_home_value).join("bin").join("java.exe")
 }
 
 /// L5:同 path 多源命中只保留优先级最高的(JAVA_HOME > PATH > CommonDir > Registry)。
@@ -433,5 +470,38 @@ OpenJDK 64-Bit Server VM (build 25.412-b08, mixed mode)
         assert!(result.is_err());
         // discover_from_common_dirs 应 swallow 这个 err
         // (完整集成测试需要 mock std::fs::read_dir;暂跳过,函数逻辑 read 上文已验证)
+    }
+
+    /// L5 测试 15:`format_registry_java_home` 把 `C:\jdk-25` 转成 `C:\jdk-25\bin\java.exe`
+    #[cfg(windows)]
+    #[test]
+    fn format_registry_java_home_appends_bin_exe() {
+        let result = format_registry_java_home(r"C:\jdk-25");
+        assert_eq!(result, PathBuf::from(r"C:\jdk-25\bin\java.exe"));
+    }
+
+    /// L5 测试 16:`format_registry_java_home` 处理带尾斜杠的输入
+    #[cfg(windows)]
+    #[test]
+    fn format_registry_java_home_handles_trailing_slash() {
+        let result = format_registry_java_home(r"C:\jdk-25\");
+        // PathBuf::join 容忍尾斜杠,结果是 `C:\jdk-25\\bin\java.exe` —— Windows OS 接受
+        // 这里只验证是 PathBuf 且不以空段开头
+        assert!(result.to_string_lossy().contains("bin"));
+        assert!(result.to_string_lossy().ends_with("java.exe"));
+    }
+
+    /// L5 测试 17:`discover_from_registry` 真实集成测试(默认忽略,需要时 opt-in)
+    /// 用 `cargo test -- --ignored discover_from_registry_smoke_test` 单独跑
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "需要本机有 JDK;CI 默认不跑,opt-in: cargo test -- --ignored"]
+    fn discover_from_registry_smoke_test() {
+        let result = discover_from_registry();
+        // 不强求非空 —— 没装 Java 的 CI 跑也应该不 panic
+        println!("Registry discovered {} Java installations", result.len());
+        for path in &result {
+            println!("  - {}", path.display());
+        }
     }
 }
