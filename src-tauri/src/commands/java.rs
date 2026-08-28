@@ -1,11 +1,9 @@
 //! L5:Java 发现 —— 在本机扫描所有可用的 java.exe,返回带版本号的候选列表。
 //! 教学点:多源(JAVA_HOME/PATH/常见路径/Windows 注册表)合并 + 正则解析 `java -version` 输出。
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde::Serialize;
-
-use super::http_client;
 
 /// 候选 Java 来自哪个来源(优先级从高到低:同 path 多源命中时保留前者)
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -72,12 +70,48 @@ fn parse_java_version(text: &str) -> Option<u32> {
 /// 流程:读四个来源 → 去重 → 逐个探活 `java -version` 取版本号 → 计算 meets_requirement → 返回。
 #[tauri::command]
 pub async fn scan_java_installations(version_id: String) -> Result<JavaScanResult, String> {
+    let _ = version_id; // TODO(L5 后段):读 <id>.json 拿 required_major
     todo!("TDD: 实现见后续测试")
 }
 
 /// L5:从 JAVA_HOME + PATH 环境变量收集候选 java.exe 路径(全平台)。
+/// 真实环境变量读取封到 `read_env_for_test`,TDD 用假值喂纯逻辑。
 fn discover_from_env() -> Vec<PathBuf> {
-    todo!("TDD")
+    let java_home = std::env::var("JAVA_HOME").ok();
+    let path = std::env::var("PATH").ok();
+    parse_env_paths(java_home.as_deref(), path.as_deref())
+}
+
+/// L5 纯函数(测试入口):从 `JAVA_HOME` 和 `PATH` 字符串解析出 java.exe 候选列表。
+/// - JAVA_HOME:若存在,拼 `<JAVA_HOME>/bin/java`(Windows 拼 `bin\java.exe`)
+/// - PATH:按平台分隔符(`:` / `;`)拆分,每段拼 `java`(`java.exe`),**只保留文件存在的**
+///
+/// 但「文件存在」是 IO,纯逻辑测试不验证 — 只看解析结果。调用方负责存在性过滤。
+fn parse_env_paths(java_home: Option<&str>, path: Option<&str>) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    if let Some(jh) = java_home {
+        if !jh.is_empty() {
+            out.push(env_java_path(jh));
+        }
+    }
+    if let Some(p) = path {
+        // PATH 分隔符:Windows 是 `;`,Unix 是 `:`
+        let sep = if cfg!(windows) { ';' } else { ':' };
+        for dir in p.split(sep).filter(|s| !s.is_empty()) {
+            out.push(env_java_path(dir));
+        }
+    }
+    out
+}
+
+/// 平台相关的 java 路径拼装 —— Windows 加 `.exe`,其他平台不加
+#[cfg(windows)]
+fn env_java_path(dir: &str) -> PathBuf {
+    PathBuf::from(dir).join("java.exe")
+}
+#[cfg(not(windows))]
+fn env_java_path(dir: &str) -> PathBuf {
+    PathBuf::from(dir).join("java")
 }
 
 /// L5:从 Windows 常见安装路径 glob 候选(仅 Windows,Linux/macOS 返空 Vec)。
@@ -248,5 +282,63 @@ OpenJDK 64-Bit Server VM (build 25.412-b08, mixed mode)
             source,
             meets_requirement: false,
         }
+    }
+
+    /// L5 测试 8:`parse_env_paths` —— JAVA_HOME 设了 → 第一项是 JAVA_HOME 的 java.exe
+    #[test]
+    fn env_paths_java_home_first() {
+        let jh = if cfg!(windows) { r"C:\jdk25" } else { "/opt/jdk25" };
+        let path = if cfg!(windows) {
+            r"C:\Windows;C:\jdk25\bin"
+        } else {
+            "/usr/bin:/opt/jdk25/bin"
+        };
+        let result = parse_env_paths(Some(jh), Some(path));
+        let expected = env_java_path(jh);
+        assert_eq!(result[0], expected, "第一项必须是 JAVA_HOME 拼出的 java.exe");
+        // JAVA_HOME + PATH 里的 bin → 至少 3 项(JAVA_HOME 一个 + PATH 两个目录各一个)
+        assert!(result.len() >= 3);
+    }
+
+    /// L5 测试 9:`parse_env_paths` —— JAVA_HOME 未设 → 跳过 JAVA_HOME,只从 PATH 取
+    #[test]
+    fn env_paths_without_java_home() {
+        let path = if cfg!(windows) {
+            r"C:\Windows;C:\jdk25\bin"
+        } else {
+            "/usr/bin:/opt/jdk25/bin"
+        };
+        let result = parse_env_paths(None, Some(path));
+        // 没有 JAVA_HOME 的结果只有 PATH 拆出来的
+        for p in &result {
+            assert!(
+                !p.to_string_lossy().contains("jdk25") || p.to_string_lossy().contains("bin"),
+                "无 JAVA_HOME 时不应有 bin 之外的路径"
+            );
+        }
+        assert!(result.len() >= 2);
+    }
+
+    /// L5 测试 10:`parse_env_paths` —— 两个都未设 → 返空 Vec
+    #[test]
+    fn env_paths_empty_when_both_unset() {
+        let result = parse_env_paths(None, None);
+        assert!(result.is_empty());
+    }
+
+    /// L5 测试 11:`parse_env_paths` —— JAVA_HOME 空字符串视同未设
+    #[test]
+    fn env_paths_empty_java_home_string() {
+        let path = if cfg!(windows) {
+            r"C:\Windows;C:\jdk25\bin"
+        } else {
+            "/usr/bin:/opt/jdk25/bin"
+        };
+        let result = parse_env_paths(Some(""), Some(path));
+        assert!(
+            result.iter().all(|p| !p.to_string_lossy().contains("\"\"")
+                && !p.to_string_lossy().is_empty()),
+            "空 JAVA_HOME 字符串应被忽略,不产生空路径条目"
+        );
     }
 }
