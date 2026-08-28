@@ -27,6 +27,7 @@ import { useVersionJar } from "../hooks/useVersionJar";
 import { useVersionAssets } from "../hooks/useVersionAssets";
 import { useVersionLibraries } from "../hooks/useVersionLibraries";
 import { useVersionJava } from "../hooks/useVersionJava";
+import { useVersionLaunch } from "../hooks/useVersionLaunch";
 import type { JavaCandidate, JavaScanResult } from "../lib/tauri";
 
 /** 把版本按 正式版/快照版 分组,并按发布时间倒序 */
@@ -62,6 +63,7 @@ function VersionCard({
   const assets = useVersionAssets(version.id);
   const libraries = useVersionLibraries(version.id);
   const java = useVersionJava(version.id);
+  const launch = useVersionLaunch(version.id);
   const javaModal = useDisclosure();
   return (
     <Flex
@@ -263,12 +265,32 @@ function VersionCard({
           {java.state.status === "error" && "重试"}
         </Button>
       </Tooltip>
-      <Tooltip label="启动功能将在后续里程碑实现" placement="top">
-        <Box as="span">
-          <Button size="sm" isDisabled>
-            启动
-          </Button>
-        </Box>
+      <Tooltip
+        label={
+          launch.state.status === "launched"
+            ? `已启动 (pid ${launch.state.result.pid})`
+            : launch.state.status === "error"
+              ? launch.state.message
+              : "选择 Java 并启动游戏(离线模式)"
+        }
+        placement="top"
+      >
+        <Button
+          size="sm"
+          onClick={() => {
+            javaModal.onOpen();
+            if (java.state.status !== "done") {
+              void java.scan();
+            }
+          }}
+          colorScheme={launch.state.status === "launched" ? "grass" : undefined}
+          variant={launch.state.status === "launched" ? "outline" : undefined}
+        >
+          {launch.state.status === "idle" && "启动"}
+          {launch.state.status === "launching" && "启动中"}
+          {launch.state.status === "launched" && "已启动"}
+          {launch.state.status === "error" && "重试"}
+        </Button>
       </Tooltip>
       <JavaCandidatesModal
         isOpen={javaModal.isOpen}
@@ -279,6 +301,9 @@ function VersionCard({
         scanState={java.state}
         versionId={version.id}
         onRetry={java.scan}
+        onLaunch={(javaPath) => void launch.launch(javaPath)}
+        launching={launch.state.status === "launching"}
+        launched={launch.state.status === "launched" ? launch.state.result : null}
       />
     </Flex>
   );
@@ -291,12 +316,18 @@ function JavaCandidatesModal({
   scanState,
   versionId,
   onRetry,
+  onLaunch,
+  launching,
+  launched,
 }: {
   isOpen: boolean;
   onClose: () => void;
   scanState: ReturnType<typeof useVersionJava>["state"];
   versionId: string;
   onRetry: () => Promise<void>;
+  onLaunch: (javaPath: string) => void;
+  launching: boolean;
+  launched: { pid: number; java_path: string } | null;
 }) {
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="lg" isCentered>
@@ -324,7 +355,12 @@ function JavaCandidatesModal({
             </Alert>
           )}
           {scanState.status === "done" && (
-            <JavaScanResultBody result={scanState.result} />
+            <JavaScanResultBody
+              result={scanState.result}
+              onLaunch={onLaunch}
+              launching={launching}
+              launched={launched}
+            />
           )}
         </ModalBody>
         <ModalFooter gap={2}>
@@ -342,8 +378,18 @@ function JavaCandidatesModal({
   );
 }
 
-/** L5:Modal 内文 —— 分适配/不适配两组 */
-function JavaScanResultBody({ result }: { result: JavaScanResult }) {
+/** L5:Modal 内文 —— 分适配/不适配两组 + 每行启动按钮(L6) */
+function JavaScanResultBody({
+  result,
+  onLaunch,
+  launching,
+  launched,
+}: {
+  result: JavaScanResult;
+  onLaunch: (javaPath: string) => void;
+  launching: boolean;
+  launched: { pid: number; java_path: string } | null;
+}) {
   if (result.candidates.length === 0) {
     return (
       <Alert status="info" borderRadius="card" bg="blue.50">
@@ -365,6 +411,7 @@ function JavaScanResultBody({ result }: { result: JavaScanResult }) {
     <VStack align="stretch" spacing={4}>
       <Text fontSize="sm" color="gray.600">
         此版本需要 <b>Java {result.required_major}+</b>,已扫描到 {result.candidates.length} 个 Java 实例
+        {launched && <> · 已启动 (pid {launched.pid})</>}
       </Text>
       {meeting.length > 0 && (
         <Box>
@@ -373,7 +420,12 @@ function JavaScanResultBody({ result }: { result: JavaScanResult }) {
           </Text>
           <VStack align="stretch" spacing={2}>
             {meeting.map((c, i) => (
-              <JavaCandidateRow key={`m-${i}`} candidate={c} />
+              <JavaCandidateRow
+                key={`m-${i}`}
+                candidate={c}
+                onLaunch={onLaunch}
+                launching={launching}
+              />
             ))}
           </VStack>
         </Box>
@@ -386,7 +438,13 @@ function JavaScanResultBody({ result }: { result: JavaScanResult }) {
           </Text>
           <VStack align="stretch" spacing={2}>
             {notMeeting.map((c, i) => (
-              <JavaCandidateRow key={`n-${i}`} candidate={c} />
+              <JavaCandidateRow
+                key={`n-${i}`}
+                candidate={c}
+                onLaunch={onLaunch}
+                launching={launching}
+                disabled
+              />
             ))}
           </VStack>
         </Box>
@@ -395,8 +453,18 @@ function JavaScanResultBody({ result }: { result: JavaScanResult }) {
   );
 }
 
-/** L5:单个 Java 候选行 —— 版本号 + 来源标签 + 路径 */
-function JavaCandidateRow({ candidate }: { candidate: JavaCandidate }) {
+/** L5+6:单个 Java 候选行 —— 版本号 + 来源标签 + 路径 + 启动按钮 */
+function JavaCandidateRow({
+  candidate,
+  onLaunch,
+  launching,
+  disabled,
+}: {
+  candidate: JavaCandidate;
+  onLaunch: (javaPath: string) => void;
+  launching: boolean;
+  disabled?: boolean;
+}) {
   return (
     <Flex
       align="center"
@@ -426,6 +494,16 @@ function JavaCandidateRow({ candidate }: { candidate: JavaCandidate }) {
       >
         {candidate.path}
       </Text>
+      <Button
+        size="xs"
+        colorScheme="brand"
+        variant={candidate.meets_requirement ? "solid" : "outline"}
+        onClick={() => onLaunch(candidate.path)}
+        isLoading={launching && candidate.meets_requirement}
+        isDisabled={disabled || !candidate.meets_requirement}
+      >
+        启动
+      </Button>
     </Flex>
   );
 }

@@ -9,7 +9,9 @@ pub fn run() {
             commands::download::download_version_json,
             commands::download::download_version_jar,
             commands::download::download_version_assets,
-            commands::download::download_version_libraries
+            commands::download::download_version_libraries,
+            commands::java::scan_java_installations,
+            commands::launch::launch_version
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

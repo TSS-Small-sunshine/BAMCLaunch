@@ -68,3 +68,14 @@ export interface JavaScanResult {
 export function scanJavaInstallations(versionId: string): Promise<JavaScanResult> {
   return invoke<JavaScanResult>("scan_java_installations", { versionId });
 }
+
+/** L6:启动版本 —— 返回 Java 进程 PID + java_path */
+export interface LaunchResult {
+  pid: number;
+  java_path: string;
+}
+
+/** L6:调 launch_version 命令(传入选定的 Java 路径) */
+export function launchVersion(versionId: string, javaPath: string): Promise<LaunchResult> {
+  return invoke<LaunchResult>("launch_version", { versionId, javaPath });
+}
