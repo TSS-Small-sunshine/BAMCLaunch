@@ -254,8 +254,19 @@ pub async fn launch_version(
         return Err("非法的版本 id".to_string());
     }
 
+    // L7:加载设置 — 如果玩家指定了 Java 路径,优先用它(否则用调用方传的 java_path)
+    let settings = super::settings::Settings::load();
+    let effective_java_path = settings
+        .java
+        .path
+        .clone()
+        .unwrap_or(java_path);
+    let min_mem = settings.jvm.min_memory_mb;
+    let max_mem = settings.jvm.max_memory_mb;
+    let effective_game_dir = settings.effective_game_dir();
+
     // 读说明书
-    let version_dir = super::download::game_dir().join("versions").join(&version_id);
+    let version_dir = effective_game_dir.join("versions").join(&version_id);
     let version_json_path = version_dir.join(format!("{version_id}.json"));
     let raw = std::fs::read_to_string(&version_json_path)
         .map_err(|e| format!("读取版本说明书失败: {e}"))?;
@@ -275,8 +286,8 @@ pub async fn launch_version(
     // 2) 占位符 vars(全 owned String,避免临时值 borrow 问题)
     let natives_dir = version_dir.join("natives");
     let mut vars: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-    let game_dir_str = super::download::game_dir().to_string_lossy().to_string();
-    let assets_root = super::download::game_dir().join("assets");
+    let game_dir_str = effective_game_dir.to_string_lossy().to_string();
+    let assets_root = effective_game_dir.join("assets");
     let assets_root_str = assets_root.to_string_lossy().to_string();
     let version_type = v.get("type").and_then(|t| t.as_str()).unwrap_or("release").to_string();
     let assets_index_name = v.get("assets").and_then(|a| a.as_str()).unwrap_or("").to_string();
@@ -307,19 +318,26 @@ pub async fn launch_version(
     let jvm_expanded = expand_arg_array_raw(jvm_raw, os, &vars);
     let game_expanded = expand_arg_array_raw(game_raw, os, &vars);
 
-    // 4) spawn
+    // 4) L7:覆盖 JVM 内存 -Xms / -Xmx(玩家设置值,前置到所有 args 前)
+    let mut jvm_with_mem = vec![
+        format!("-Xms{}m", min_mem),
+        format!("-Xmx{}m", max_mem),
+    ];
+    jvm_with_mem.extend(jvm_expanded);
+
+    // 5) spawn
     let pid = spawn_game_process(
-        Path::new(&java_path),
-        &jvm_expanded,
+        Path::new(&effective_java_path),
+        &jvm_with_mem,
         &main_class,
         &game_expanded,
-        &super::download::game_dir(),
+        &effective_game_dir,
     )
     .map_err(|e| format!("spawn java 失败: {e}"))?;
 
     Ok(LaunchResult {
         pid,
-        java_path,
+        java_path: effective_java_path,
     })
 }
 

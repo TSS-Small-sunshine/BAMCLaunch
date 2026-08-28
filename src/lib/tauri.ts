@@ -79,3 +79,34 @@ export interface LaunchResult {
 export function launchVersion(versionId: string, javaPath: string): Promise<LaunchResult> {
   return invoke<LaunchResult>("launch_version", { versionId, javaPath });
 }
+
+/** L7:Java 路径设置(可手动指定,不指定回退 L5 扫描结果) */
+export interface JavaSettings {
+  /** `D:\jdk-25\bin\java.exe` 这样的绝对路径 */
+  path?: string;
+  /** 玩家记录的主版本号(仅 UI 显示用) */
+  version?: number;
+}
+
+/** L7:JVM 内存设置 */
+export interface JvmSettings {
+  min_memory_mb: number;
+  max_memory_mb: number;
+}
+
+/** L7:全部设置 */
+export interface Settings {
+  java: JavaSettings;
+  jvm: JvmSettings;
+  game_dir?: string;
+}
+
+/** L7:加载当前设置 */
+export function loadSettings(): Promise<Settings> {
+  return invoke<Settings>("load_settings");
+}
+
+/** L7:保存设置(后端会校验路径合法性、内存范围、原子写盘) */
+export function saveSettings(settings: Settings): Promise<void> {
+  return invoke<void>("save_settings", { settings });
+}

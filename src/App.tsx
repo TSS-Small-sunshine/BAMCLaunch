@@ -4,6 +4,7 @@ import TitleBar from "./components/TitleBar";
 import Sidebar from "./components/Sidebar";
 import HomePage from "./pages/HomePage";
 import PlaceholderPage from "./pages/PlaceholderPage";
+import SettingsPage from "./pages/SettingsPage";
 
 /** 应用外壳:标题栏 + 侧边导航 + 路由内容区 */
 export default function App() {
@@ -17,7 +18,7 @@ export default function App() {
             <Route path="/" element={<HomePage />} />
             <Route path="/download" element={<PlaceholderPage kind="download" />} />
             <Route path="/accounts" element={<PlaceholderPage kind="accounts" />} />
-            <Route path="/settings" element={<PlaceholderPage kind="settings" />} />
+            <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </Box>
       </Flex>
