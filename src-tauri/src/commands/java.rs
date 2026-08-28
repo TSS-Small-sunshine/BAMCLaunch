@@ -125,12 +125,24 @@ OpenJDK 64-Bit Server VM Temurin-25+36 (build 25+36, mixed mode, sharing)
         assert_eq!(parse_java_version(text), Some(25));
     }
 
-    // 后续测试在 TDD 循环里继续追加:
-    // - parse_java_version_legacy_format("1.8.0_412") == Some(8)
-    // - parse_java_version_garbage_input → None
-    // - meets_requirement 边界(等号、超过、低于)
-    // - dedupe_candidates(同 path 多源 → 保留优先级高)
-    // - discover_from_env(JAVA_HOME 设与未设、PATH 含与不含 java.exe)
-    // - discover_from_common_dirs(空目录 + 含 jdk-* 的目录)
-    // - discover_from_registry 单元测试 —— mock 注册表较难,改成「集成测试开 opt-in」
+    /// L5 测试 2:JDK 8 及更早的旧版字符串 — 第一段是 "1",真主版本是第二段
+    /// 实测样本:Oracle JDK 8u412 的 `java -version` 输出
+    #[test]
+    fn parse_java_version_legacy_format() {
+        let text = r#"openjdk version "1.8.0_412" 2025-08-19
+OpenJDK Runtime Environment (build 1.8.0_412-b08)
+OpenJDK 64-Bit Server VM (build 25.412-b08, mixed mode)
+"#;
+        assert_eq!(parse_java_version(text), Some(8));
+    }
+
+    /// L5 测试 3:垃圾输入应该返 None(不是 panic) —— 教学点:
+    /// 解析失败不能炸扫描流程,只能跳过这个候选
+    #[test]
+    fn parse_java_version_garbage_returns_none() {
+        assert_eq!(parse_java_version(""), None);
+        assert_eq!(parse_java_version("not java at all"), None);
+        assert_eq!(parse_java_version(r#"version """#), None); // 空 version 段
+        assert_eq!(parse_java_version(r#"version "abc""#), None); // 非数字
+    }
 }
