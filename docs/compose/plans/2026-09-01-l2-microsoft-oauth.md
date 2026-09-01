@@ -268,13 +268,13 @@ git commit -m "feat(backend): add microsoft oauth types and error code mapping"
 
 **Interfaces:**
 
-- `async fn start_device_code_flow(&self) -> Result<DeviceCodeResponse, String>` — POST `https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode`,form 字段 `client_id=00000000402b2508` & `scope=XboxLive.signin offline_access`,返 `DeviceCodeResponse`。
-- `async fn poll_device_code_token(&self, device_code: &str) -> Result<Result<MicrosoftTokens, OAuthError>, String>` — 外层 `Result` 是 HTTP 错误,内层 `Result` 是 OAuth 错误码(成功 → `Ok(Tokens)`,失败 → `Err(OAuthError)`)。POST `https://login.microsoftonline.com/consumers/oauth2/v2.0/token`,form 字段 `grant_type=urn:ietf:params:oauth:grant-type:device_code` & `client_id=00000000402b2508` & `device_code=<输入>`。响应 200 → 返 `Ok(Tokens)`;响应 400 且 `error=authorization_pending` → 返 `Err(AuthorizationPending)`(调用方按 interval 重试);其他 4xx → 返对应 `OAuthError`。
+- `async fn start_device_code_flow(&self) -> Result<DeviceCodeResponse, String>` — POST `https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode`,form 字段 `client_id=0b1a81c9-6e23-41fd-8690-98a17d81bf4a`(BAMCLaunch 自有 Azure app,display name: `BAMC_Launcher Auth`)& `scope=XboxLive.signin offline_access`,返 `DeviceCodeResponse`。
+- `async fn poll_device_code_token(&self, device_code: &str) -> Result<Result<MicrosoftTokens, OAuthError>, String>` — 外层 `Result` 是 HTTP 错误,内层 `Result` 是 OAuth 错误码(成功 → `Ok(Tokens)`,失败 → `Err(OAuthError)`)。POST `https://login.microsoftonline.com/consumers/oauth2/v2.0/token`,form 字段 `grant_type=urn:ietf:params:oauth:grant-type:device_code` & `client_id=0b1a81c9-6e23-41fd-8690-98a17d81bf4a`(BAMCLaunch 自有 Azure app,display name: `BAMC_Launcher Auth`)& `device_code=<输入>`。响应 200 → 返 `Ok(Tokens)`;响应 400 且 `error=authorization_pending` → 返 `Err(AuthorizationPending)`(调用方按 interval 重试);其他 4xx → 返对应 `OAuthError`。
 
 - [ ] **Step 1: 写 `start_device_code_flow`**
 
 ```rust
-const MS_CLIENT_ID: &str = "00000000402b2508"; // HMCL 公开 client(SJMCL/PCL 同款)
+const MS_CLIENT_ID: &str = "0b1a81c9-6e23-41fd-8690-98a17d81bf4a"; // BAMCLaunch 自有 Azure app, display name: BAMC_Launcher Auth
 const MS_SCOPE: &str = "XboxLive.signin offline_access";
 const DEVICE_CODE_URL: &str =
     "https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode";
@@ -362,10 +362,10 @@ impl MicrosoftAuthenticator {
         );
     }
 
-    /// L2 测试 8:HMCL 公开 client_id 复用(spec §4.3)
+    /// L2 测试 8:BAMCLaunch 自有 Azure app client_id(spec §4.3)
     #[test]
-    fn ms_client_id_is_hmcl_public_value() {
-        assert_eq!(MS_CLIENT_ID, "00000000402b2508");
+    fn ms_client_id_is_bamclaunch_own_value() {
+        assert_eq!(MS_CLIENT_ID, "0b1a81c9-6e23-41fd-8690-98a17d81bf4a");
     }
 
     /// L2 测试 9:scope 包含 offline_access(refresh_token 才能拿到)

@@ -66,7 +66,7 @@ Account (enum,serde tag = "type")
 | 2. 用户在浏览器输入 user_code | `https://microsoft.com/devicelogin`(由 verification_uri 字段给) | 浏览器 | (用户交互) |
 | 3. 轮询 token 端点 | `https://login.microsoftonline.com/consumers/oauth2/v2.0/token` | POST form | `grant_type=urn:ietf:params:oauth:grant-type:device_code`, `device_code` |
 
-- **client_id**:HMCL 公开的 `00000000402b2508`(Mojang 为 Minecraft Java 启用的公开 client,无 secret、PKCE 可选;SJMCL、HMCL、PCL 均使用此 ID,Azure 端属「公共客户端/原生应用」)
+- **client_id**:BAMCLaunch 自有 Azure app 的 `0b1a81c9-6e23-41fd-8690-98a17d81bf4a`(display name: `BAMC_Launcher Auth`;Azure 端属「公共客户端/原生应用」,无 secret、PKCE 可选)
 - **scope**:`XboxLive.signin offline_access`(`offline_access` 必带,才能换 refresh_token)
 - **tenant**:`/consumers`(只允许个人微软账号,跟 Yggdrasil 协议一致;`/organizations` 会拒个人账号)
 - 设备码响应字段:`{ device_code, user_code, verification_uri, expires_in(默认 900s), interval(默认 5s), message }`
@@ -171,7 +171,7 @@ Account (enum,serde tag = "type")
 - Minecraft Services API(Xbox Live + XSTS + Minecraft access token 兑换链路):<https://minecraft.wiki/w/Microsoft_account>
 - SJMCL 账户模块源码(微软登录 + authlib-injector 双轨):<https://github.com/UNIkeEN/SJMCL/tree/main/src-tauri/src/account>
 - HMCL `MicrosoftAuthenticator.java`(设备码流 + Xbox Live 兑换参考实现):<https://github.com/huanghongxun/HMCL/blob/master/HMCLCore/src/main/java/org/jackhuang/hmcl/auth/MicrosoftAccount.java>
-- HMCL 公开 client_id 来源讨论(社区约定值 `00000000402b2508`):<https://github.com/huanghongxun/HMCL/issues/1240>
+- HMCL 公开 client_id 来源讨论(社区旧约定值 `00000000402b2508`,BAMCLaunch 已切换为自有 Azure app,此 reference 保留作历史背景):<https://github.com/huanghongxun/HMCL/issues/1240>
 - PCL2 账户系统(微软登录 + 离线模式):<https://github.com/PCL-Community/PCL2>
 - Crafatar 皮肤公开镜像:<https://crafatar.com>(API:<https://github.com/Crafatar/crafatar>)
 - mc-heads 备用头像镜像:<https://mc-heads.net>
