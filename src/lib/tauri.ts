@@ -1,29 +1,30 @@
-import { invoke } from "@tauri-apps/api/core";
-import type { VersionManifest } from "../types/version";
+import { invoke } from '@tauri-apps/api/core';
+import type { VersionManifest } from '../types/version';
+import type { Account } from '../types/account';
 
 /** 调用 Rust 后端的 fetch_version_manifest 命令 */
 export function fetchVersionManifest(): Promise<VersionManifest> {
-  return invoke<VersionManifest>("fetch_version_manifest");
+  return invoke<VersionManifest>('fetch_version_manifest');
 }
 
 /** 把指定版本的 version JSON 下载到本地游戏目录,返回保存路径 */
 export function downloadVersionJson(versionId: string, url: string): Promise<string> {
-  return invoke<string>("download_version_json", { versionId, url });
+  return invoke<string>('download_version_json', { versionId, url });
 }
 
 /** 下载并校验该版本的 client.jar,返回保存路径 */
 export function downloadVersionJar(versionId: string): Promise<string> {
-  return invoke<string>("download_version_jar", { versionId });
+  return invoke<string>('download_version_jar', { versionId });
 }
 
 /** 下载该版本全部 assets(素材库),返回下载统计 */
 export function downloadVersionAssets(versionId: string): Promise<AssetsSummary> {
-  return invoke<AssetsSummary>("download_version_assets", { versionId });
+  return invoke<AssetsSummary>('download_version_assets', { versionId });
 }
 
 /** 下载当前平台需要的全部 libraries(运行库),返回下载统计 */
 export function downloadVersionLibraries(versionId: string): Promise<LibrariesSummary> {
-  return invoke<LibrariesSummary>("download_version_libraries", { versionId });
+  return invoke<LibrariesSummary>('download_version_libraries', { versionId });
 }
 
 /** download_version_assets 命令的返回统计 */
@@ -42,7 +43,7 @@ export interface LibrariesSummary {
 }
 
 /** L5:扫描本机 Java 安装 —— 候选来源(优先级从高到低) */
-export type JavaSource = "java_home" | "path" | "common_dir" | "registry";
+export type JavaSource = 'java_home' | 'path' | 'common_dir' | 'registry';
 
 /** L5:扫描得到的一个候选 Java 安装 */
 export interface JavaCandidate {
@@ -66,7 +67,7 @@ export interface JavaScanResult {
 
 /** L5:扫描本机 Java 安装并取真实版本号(调 scan_java_installations 命令) */
 export function scanJavaInstallations(versionId: string): Promise<JavaScanResult> {
-  return invoke<JavaScanResult>("scan_java_installations", { versionId });
+  return invoke<JavaScanResult>('scan_java_installations', { versionId });
 }
 
 /** L6:启动版本 —— 返回 Java 进程 PID + java_path */
@@ -77,7 +78,7 @@ export interface LaunchResult {
 
 /** L6:调 launch_version 命令(传入选定的 Java 路径) */
 export function launchVersion(versionId: string, javaPath: string): Promise<LaunchResult> {
-  return invoke<LaunchResult>("launch_version", { versionId, javaPath });
+  return invoke<LaunchResult>('launch_version', { versionId, javaPath });
 }
 
 /** L7:Java 路径设置(可手动指定,不指定回退 L5 扫描结果) */
@@ -103,12 +104,12 @@ export interface Settings {
 
 /** L7:加载当前设置 */
 export function loadSettings(): Promise<Settings> {
-  return invoke<Settings>("load_settings");
+  return invoke<Settings>('load_settings');
 }
 
 /** L7:保存设置(后端会校验路径合法性、内存范围、原子写盘) */
 export function saveSettings(settings: Settings): Promise<void> {
-  return invoke<void>("save_settings", { settings });
+  return invoke<void>('save_settings', { settings });
 }
 
 /** L8:运行中的实例(自动清理掉已退出的进程) */
@@ -121,13 +122,33 @@ export interface RunningInstance {
 
 /** L8:列出运行实例(后端会过滤已死的 + 顺手保存清理) */
 export function listInstances(): Promise<RunningInstance[]> {
-  return invoke<RunningInstance[]>("list_instances");
+  return invoke<RunningInstance[]>('list_instances');
 }
 
 /** L8:杀进程结果分类 */
-export type KillResult = "already_gone" | "terminated_by_sigterm" | "force_killed";
+export type KillResult = 'already_gone' | 'terminated_by_sigterm' | 'force_killed';
 
 /** L8:杀进程 UI 调用 — 自动从 running.json 移除 */
 export function killRunningInstance(pid: number): Promise<KillResult> {
-  return invoke<KillResult>("kill_running_instance", { pid });
+  return invoke<KillResult>('kill_running_instance', { pid });
+}
+
+/** M3 / L1:列出全部账户(空数组 = 还没添加任何账户) */
+export function listAccounts(): Promise<Account[]> {
+  return invoke<Account[]>('list_accounts');
+}
+
+/** M3 / L1:添加离线账户 —— 后端校验用户名(3-16 字符,[a-zA-Z0-9_]) + 派生 UUID */
+export function addOfflineAccount(username: string): Promise<Account> {
+  return invoke<Account>('add_offline_account', { username });
+}
+
+/** M3 / L1:按账户 UUID 移除账户;若被删的是 active,active_account.json 一并清掉 */
+export function removeAccount(accountId: string): Promise<void> {
+  return invoke<void>('remove_account', { accountId });
+}
+
+/** M3 / L1:切换当前激活账户(写 active_account.json) */
+export function setActiveAccount(accountId: string): Promise<void> {
+  return invoke<void>('set_active_account', { accountId });
 }
