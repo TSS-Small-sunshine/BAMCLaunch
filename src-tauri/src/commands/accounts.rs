@@ -42,6 +42,10 @@ pub struct MicrosoftAccount {
     pub access_token: String,
     pub refresh_token: String,
     pub expires_at: DateTime<Utc>,
+    /// Xbox User ID —— spec §4.1 列出,launch 注入 `auth_xuid` 需要
+    /// L1 旧 JSON 无此字段,`#[serde(default)]` 兜底为空字符串
+    #[serde(default)]
+    pub xuid: String,
 }
 
 /// M3:账户列表容器(serde 容器 struct;空文件 = 空列表)
@@ -248,6 +252,34 @@ pub async fn set_active_account(account_id: Uuid) -> Result<(), String> {
         return Err(format!("账户不存在: {account_id}"));
     }
     ActiveAccount { id: account_id }.save()
+}
+
+/// L2 补 L1 漏的:启动时读 `active_account.json` → 找到列表里对应账户 → 返 `Some(Account)`
+/// active id 为 nil / 列表里找不到 → 返 `None`
+#[tauri::command]
+pub async fn get_active_account() -> Result<Option<Account>, String> {
+    let active = ActiveAccount::load();
+    if active.id.is_nil() {
+        return Ok(None);
+    }
+    let list = AccountList::load();
+    Ok(list.accounts.into_iter().find(|a| a.id() == active.id))
+}
+
+/// L2 助手:把 MicrosoftAccount 按 `id` 覆盖写入(已在则更新,不在则追加)
+/// 同时设为 active(M3 spec §4.6 「登录成功自动设为 active」)
+/// `pub(crate)` 暴露给 `microsoft_auth` 模块复用
+pub(crate) fn save_microsoft_account(mc: MicrosoftAccount) -> Result<Account, String> {
+    let mut list = AccountList::load();
+    let new_id = mc.id;
+    if let Some(idx) = list.find_index(new_id) {
+        list.accounts[idx] = Account::Microsoft(mc.clone());
+    } else {
+        list.accounts.push(Account::Microsoft(mc.clone()));
+    }
+    list.save()?;
+    ActiveAccount { id: new_id }.save()?;
+    Ok(Account::Microsoft(mc))
 }
 
 // ────────────────────────────────────────────────────────────────────────────
