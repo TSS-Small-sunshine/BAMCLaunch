@@ -1,0 +1,10 @@
+# Prettier 忽略：构建产物、依赖、锁文件、其他语言
+dist
+node_modules
+src-tauri
+scripts
+public
+*.lock
+*.toml
+*.md
+package-lock.json

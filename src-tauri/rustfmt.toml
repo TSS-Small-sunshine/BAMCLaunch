@@ -1,0 +1,3 @@
+# rustfmt 配置 (Keep at 100 cols, 4-space indentation)
+max_width = 100
+tab_spaces = 4

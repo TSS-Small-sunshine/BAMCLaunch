@@ -1,0 +1,50 @@
+# BAMCLaunch CI
+# 单一 job，覆盖前端 (Node) + 后端 (Rust/Tauri) 验证。
+# Rust 步骤只跑 check/test/clippy 不做完整 build 以加速 CI。
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    name: Frontend build + Rust check/test/clippy
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Set up Rust stable (1.77+)
+        uses: dtolnay/rust-toolchain@stable
+
+      # Tauri 在 Windows 上需要 MSVC C++ 构建工具
+      - name: Set up MSVC
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Frontend build (tsc + vite build)
+        run: npm run build
+
+      - name: Rust check (no full build)
+        working-directory: src-tauri
+        run: cargo check --all-targets
+
+      - name: Rust unit tests (lib only, no e2e)
+        working-directory: src-tauri
+        run: cargo test --lib
+
+      - name: Rust clippy (strict)
+        working-directory: src-tauri
+        run: cargo clippy --all-targets -- -D warnings
