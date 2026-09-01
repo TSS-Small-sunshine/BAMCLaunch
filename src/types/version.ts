@@ -7,7 +7,7 @@ export interface LatestVersions {
 
 export interface ManifestVersion {
   id: string;
-  type: "release" | "snapshot";
+  type: 'release' | 'snapshot';
   url: string;
   time: string;
   releaseTime: string;

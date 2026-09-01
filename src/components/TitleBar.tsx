@@ -1,12 +1,14 @@
-import { Box, HStack, IconButton } from "@chakra-ui/react";
-import { CloseIcon, MinusIcon } from "@chakra-ui/icons";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { Box, HStack, IconButton } from '@chakra-ui/react';
+import { CloseIcon, MinusIcon } from '@chakra-ui/icons';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 
 const appWindow = getCurrentWindow();
 
 /** 最大化/还原按钮的图标:一个空心方框 */
 function MaximizeGlyph() {
-  return <Box w="10px" h="10px" border="1.5px solid" borderColor="currentColor" borderRadius="2px" />;
+  return (
+    <Box w="10px" h="10px" border="1.5px solid" borderColor="currentColor" borderRadius="2px" />
+  );
 }
 
 /**
@@ -30,13 +32,7 @@ export default function TitleBar() {
       borderColor="brand.100"
     >
       <Box data-tauri-drag-region display="flex" alignItems="center" gap={2}>
-        <Box
-          w="7px"
-          h="7px"
-          borderRadius="2px"
-          bg="grass.500"
-          boxShadow="0 0 0 2px #7CBD4B22"
-        />
+        <Box w="7px" h="7px" borderRadius="2px" bg="grass.500" boxShadow="0 0 0 2px #7CBD4B22" />
         <Box fontSize="xs" fontWeight="700" color="gray.500" letterSpacing="1.5px">
           BAMC LAUNCH
         </Box>
@@ -65,7 +61,7 @@ export default function TitleBar() {
           size="sm"
           variant="ghost"
           color="gray.500"
-          _hover={{ bg: "red.500", color: "white" }}
+          _hover={{ bg: 'red.500', color: 'white' }}
           onClick={() => appWindow.close()}
         />
       </HStack>

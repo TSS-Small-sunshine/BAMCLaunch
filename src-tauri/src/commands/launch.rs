@@ -126,10 +126,7 @@ fn expand_arg_array(items: &[ArgItem], os: OsKind) -> Vec<String> {
                     push_arg_value(&mut out, value);
                 } else {
                     // 找到最后一条匹配的 rule
-                    let last_match = rules
-                        .iter()
-                        .rev()
-                        .find(|r| arg_rule_applies(r, os));
+                    let last_match = rules.iter().rev().find(|r| arg_rule_applies(r, os));
                     if let Some(r) = last_match {
                         if r.action == "allow" {
                             push_arg_value(&mut out, value);
@@ -202,7 +199,9 @@ fn build_classpath(version_id: &str, libraries_dir: &Path) -> Result<String, Str
     collect_jars(libraries_dir, &mut jars)?;
 
     // 2) 拼:先 client.jar + version JSON,后 libraries
-    let version_dir = super::download::game_dir().join("versions").join(version_id);
+    let version_dir = super::download::game_dir()
+        .join("versions")
+        .join(version_id);
     let client_jar = version_dir.join("client.jar");
     let version_json = version_dir.join(format!("{version_id}.json"));
     if !client_jar.is_file() {
@@ -241,10 +240,7 @@ fn collect_jars(dir: &Path, out: &mut Vec<String>) -> Result<(), String> {
 
 /// L6:启动顶层命令 —— 前端 [启动] 按钮调用
 #[tauri::command]
-pub async fn launch_version(
-    version_id: String,
-    java_path: String,
-) -> Result<LaunchResult, String> {
+pub async fn launch_version(version_id: String, java_path: String) -> Result<LaunchResult, String> {
     // id 安全化
     if version_id.is_empty()
         || version_id.contains('/')
@@ -256,11 +252,7 @@ pub async fn launch_version(
 
     // L7:加载设置 — 如果玩家指定了 Java 路径,优先用它(否则用调用方传的 java_path)
     let settings = super::settings::Settings::load();
-    let effective_java_path = settings
-        .java
-        .path
-        .clone()
-        .unwrap_or(java_path);
+    let effective_java_path = settings.java.path.clone().unwrap_or(java_path);
     let min_mem = settings.jvm.min_memory_mb;
     let max_mem = settings.jvm.max_memory_mb;
     let effective_game_dir = settings.effective_game_dir();
@@ -289,10 +281,21 @@ pub async fn launch_version(
     let game_dir_str = effective_game_dir.to_string_lossy().to_string();
     let assets_root = effective_game_dir.join("assets");
     let assets_root_str = assets_root.to_string_lossy().to_string();
-    let version_type = v.get("type").and_then(|t| t.as_str()).unwrap_or("release").to_string();
-    let assets_index_name = v.get("assets").and_then(|a| a.as_str()).unwrap_or("").to_string();
+    let version_type = v
+        .get("type")
+        .and_then(|t| t.as_str())
+        .unwrap_or("release")
+        .to_string();
+    let assets_index_name = v
+        .get("assets")
+        .and_then(|a| a.as_str())
+        .unwrap_or("")
+        .to_string();
     let uuid_offline = uuid_offline_for("Player");
-    vars.insert("natives_directory".into(), natives_dir.to_string_lossy().to_string());
+    vars.insert(
+        "natives_directory".into(),
+        natives_dir.to_string_lossy().to_string(),
+    );
     vars.insert("classpath".into(), classpath);
     vars.insert("version_name".into(), version_id.clone());
     vars.insert("game_directory".into(), game_dir_str);
@@ -311,18 +314,21 @@ pub async fn launch_version(
     vars.insert("resolution_height".into(), "480".into());
 
     // 3) 拼 JVM args + game args
-    let jvm_raw = v.get("arguments").and_then(|a| a.get("jvm")).and_then(|j| j.as_array());
-    let game_raw = v.get("arguments").and_then(|a| a.get("game")).and_then(|g| g.as_array());
+    let jvm_raw = v
+        .get("arguments")
+        .and_then(|a| a.get("jvm"))
+        .and_then(|j| j.as_array());
+    let game_raw = v
+        .get("arguments")
+        .and_then(|a| a.get("game"))
+        .and_then(|g| g.as_array());
     let os = OsKind::current();
 
     let jvm_expanded = expand_arg_array_raw(jvm_raw, os, &vars);
     let game_expanded = expand_arg_array_raw(game_raw, os, &vars);
 
     // 4) L7:覆盖 JVM 内存 -Xms / -Xmx(玩家设置值,前置到所有 args 前)
-    let mut jvm_with_mem = vec![
-        format!("-Xms{}m", min_mem),
-        format!("-Xmx{}m", max_mem),
-    ];
+    let mut jvm_with_mem = vec![format!("-Xms{}m", min_mem), format!("-Xmx{}m", max_mem)];
     jvm_with_mem.extend(jvm_expanded);
 
     // 5) spawn
@@ -362,7 +368,10 @@ fn expand_arg_array_raw(
     for item in arr {
         if let Some(obj) = item.as_object() {
             // 带 rules 的条件项
-            let rules_empty = obj.get("rules").map(|r| r.as_array().map(|a| a.is_empty()).unwrap_or(true)).unwrap_or(true);
+            let rules_empty = obj
+                .get("rules")
+                .map(|r| r.as_array().map(|a| a.is_empty()).unwrap_or(true))
+                .unwrap_or(true);
             if !rules_empty {
                 if let Some(rules_arr) = obj.get("rules").and_then(|r| r.as_array()) {
                     // 找最后一条匹配
@@ -448,9 +457,7 @@ fn spawn_game_process(
         .current_dir(cwd)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let child = cmd
-        .spawn()
-        .map_err(|e| format!("spawn java 失败: {e}"))?;
+    let child = cmd.spawn().map_err(|e| format!("spawn java 失败: {e}"))?;
     Ok(child.id().unwrap_or(0))
 }
 
@@ -467,7 +474,7 @@ fn uuid_offline_for(player_name: &str) -> String {
 
 /// L6 助手:对输入字节做 MD5(用 RustCrypto 的 md-5 crate)
 fn md5_like_jdk_nameUUID(input: &str) -> [u8; 16] {
-    use md5::{Md5, Digest};
+    use md5::{Digest, Md5};
     let mut hasher = Md5::new();
     hasher.update(input.as_bytes());
     let result = hasher.finalize();
@@ -484,7 +491,7 @@ fn format_uuid_v3(hash: &[u8; 16]) -> String {
     let mut bytes = *hash;
     bytes[6] = (bytes[6] & 0x0f) | 0x30; // version 3
     bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 10
-    // UUID 字符串:`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+                                         // UUID 字符串:`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
     format!(
         "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
         bytes[0], bytes[1], bytes[2], bytes[3],
@@ -653,7 +660,7 @@ mod tests {
         let expected_sep = if cfg!(windows) { ';' } else { ':' };
         assert_eq!(sep, expected_sep);
         assert_eq!(jars.len(), 2); // 只数 .jar,.txt 跳过
-        // 顺序不固定(read_dir 不保证),但两条都应在
+                                   // 顺序不固定(read_dir 不保证),但两条都应在
         assert!(joined.contains("a.jar"));
         assert!(joined.contains("b.jar"));
         assert!(!joined.contains("c.txt"));

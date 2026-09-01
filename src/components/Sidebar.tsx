@@ -1,12 +1,28 @@
-import { Box, Flex, Text, VStack } from "@chakra-ui/react";
-import { NavLink } from "react-router-dom";
+import { Box, Flex, Text, VStack } from '@chakra-ui/react';
+import { NavLink } from 'react-router-dom';
 
 const NAV_ITEMS = [
-  { to: "/", label: "版本", icon: "M12 3 2.5 11H5v9h5v-6h4v6h5v-9h2.5L12 3Z" },
-  { to: "/download", label: "资源下载", icon: "M11 4h2v8.2l3.1-3.1 1.4 1.4L12 15.9 6.5 10.5l1.4-1.4L11 12.2V4ZM4 19h16v2H4v-2Z" },
-  { to: "/instances", label: "运行实例", icon: "M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2Zm-7 4c1.7 0 3 1.3 3 3s-1.3 3-3 3-3-1.3-3-3 1.3-3 3-3Zm6 12H6v-1.4c0-2 4-3.1 6-3.1s6 1.1 6 3.1V19Z" },
-  { to: "/accounts", label: "账户", icon: "M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5Z" },
-  { to: "/settings", label: "设置", icon: "M4 6h9v2H4Zm11 0h5v2h-5ZM4 11h5v2H4Zm7 0h9v2h-9ZM4 16h9v2H4Zm11 0h5v2h-5Z" },
+  { to: '/', label: '版本', icon: 'M12 3 2.5 11H5v9h5v-6h4v6h5v-9h2.5L12 3Z' },
+  {
+    to: '/download',
+    label: '资源下载',
+    icon: 'M11 4h2v8.2l3.1-3.1 1.4 1.4L12 15.9 6.5 10.5l1.4-1.4L11 12.2V4ZM4 19h16v2H4v-2Z',
+  },
+  {
+    to: '/instances',
+    label: '运行实例',
+    icon: 'M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2Zm-7 4c1.7 0 3 1.3 3 3s-1.3 3-3 3-3-1.3-3-3 1.3-3 3-3Zm6 12H6v-1.4c0-2 4-3.1 6-3.1s6 1.1 6 3.1V19Z',
+  },
+  {
+    to: '/accounts',
+    label: '账户',
+    icon: 'M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5Z',
+  },
+  {
+    to: '/settings',
+    label: '设置',
+    icon: 'M4 6h9v2H4Zm11 0h5v2h-5ZM4 11h5v2H4Zm7 0h9v2h-9ZM4 16h9v2H4Zm11 0h5v2h-5Z',
+  },
 ];
 
 function NavIcon({ d }: { d: string }) {
@@ -60,7 +76,7 @@ export default function Sidebar() {
       {/* 导航项 */}
       <VStack align="stretch" spacing={1.5}>
         {NAV_ITEMS.map((item) => (
-          <NavLink key={item.to} to={item.to} style={{ textDecoration: "none" }}>
+          <NavLink key={item.to} to={item.to} style={{ textDecoration: 'none' }}>
             {({ isActive }) => (
               <Flex
                 px={3.5}
@@ -70,10 +86,10 @@ export default function Sidebar() {
                 gap={3}
                 fontSize="sm"
                 fontWeight="700"
-                bg={isActive ? "brand.500" : "transparent"}
-                color={isActive ? "white" : "gray.600"}
-                boxShadow={isActive ? "glow" : "none"}
-                _hover={isActive ? undefined : { bg: "brand.50", color: "brand.600" }}
+                bg={isActive ? 'brand.500' : 'transparent'}
+                color={isActive ? 'white' : 'gray.600'}
+                boxShadow={isActive ? 'glow' : 'none'}
+                _hover={isActive ? undefined : { bg: 'brand.50', color: 'brand.600' }}
                 transition="all 0.15s"
               >
                 <NavIcon d={item.icon} />
@@ -90,7 +106,13 @@ export default function Sidebar() {
       <Box px={2} py={2}>
         <Flex gap="3px" mb={3}>
           {Array.from({ length: 14 }, (_, i) => (
-            <Box key={i} w="6px" h="6px" borderRadius="1.5px" bg={i % 2 === 0 ? "grass.400" : "grass.600"} />
+            <Box
+              key={i}
+              w="6px"
+              h="6px"
+              borderRadius="1.5px"
+              bg={i % 2 === 0 ? 'grass.400' : 'grass.600'}
+            />
           ))}
         </Flex>
         <Text fontSize="xs" color="gray.400">

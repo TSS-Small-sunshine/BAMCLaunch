@@ -122,7 +122,11 @@ pub async fn scan_java_installations(version_id: String) -> Result<JavaScanResul
 /// L5:从 `<id>.json` 读 `javaVersion.majorVersion`,缺则报错
 fn read_required_major_from_version_json(version_id: &str) -> Result<u32, String> {
     // 安全化 id(防路径穿越,与其他命令一致)
-    if version_id.is_empty() || version_id.contains('/') || version_id.contains('\\') || version_id.contains("..") {
+    if version_id.is_empty()
+        || version_id.contains('/')
+        || version_id.contains('\\')
+        || version_id.contains("..")
+    {
         return Err("非法的版本 id".to_string());
     }
     let path = crate::commands::download::game_dir()
@@ -133,7 +137,8 @@ fn read_required_major_from_version_json(version_id: &str) -> Result<u32, String
         return Err(format!("未找到版本说明书: {}", path.display()));
     }
     let raw = std::fs::read_to_string(&path).map_err(|e| format!("读取版本说明书失败: {e}"))?;
-    let v: serde_json::Value = serde_json::from_str(&raw).map_err(|e| format!("解析版本说明书失败: {e}"))?;
+    let v: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|e| format!("解析版本说明书失败: {e}"))?;
     let major = v
         .get("javaVersion")
         .and_then(|j| j.get("majorVersion"))
@@ -430,7 +435,11 @@ OpenJDK 64-Bit Server VM (build 25.412-b08, mixed mode)
         ];
         let deduped = dedupe_candidates(candidates);
         assert_eq!(deduped.len(), 1, "4 条同 path 应该合成 1 条");
-        assert_eq!(deduped[0].source, JavaSource::JavaHome, "优先级最高的应保留");
+        assert_eq!(
+            deduped[0].source,
+            JavaSource::JavaHome,
+            "优先级最高的应保留"
+        );
     }
 
     /// L5 测试 6:不同 path 不去重 —— 普通情况,4 个不同 java.exe 应保留
@@ -471,7 +480,11 @@ OpenJDK 64-Bit Server VM (build 25.412-b08, mixed mode)
     /// L5 测试 8:`parse_env_paths` —— JAVA_HOME 设了 → 第一项是 JAVA_HOME 的 java.exe
     #[test]
     fn env_paths_java_home_first() {
-        let jh = if cfg!(windows) { r"C:\jdk25" } else { "/opt/jdk25" };
+        let jh = if cfg!(windows) {
+            r"C:\jdk25"
+        } else {
+            "/opt/jdk25"
+        };
         let path = if cfg!(windows) {
             r"C:\Windows;C:\jdk25\bin"
         } else {
@@ -479,7 +492,10 @@ OpenJDK 64-Bit Server VM (build 25.412-b08, mixed mode)
         };
         let result = parse_env_paths(Some(jh), Some(path));
         let expected = env_java_path(jh);
-        assert_eq!(result[0], expected, "第一项必须是 JAVA_HOME 拼出的 java.exe");
+        assert_eq!(
+            result[0], expected,
+            "第一项必须是 JAVA_HOME 拼出的 java.exe"
+        );
         // JAVA_HOME + PATH 里的 bin → 至少 3 项(JAVA_HOME 一个 + PATH 两个目录各一个)
         assert!(result.len() >= 3);
     }
@@ -520,8 +536,9 @@ OpenJDK 64-Bit Server VM (build 25.412-b08, mixed mode)
         };
         let result = parse_env_paths(Some(""), Some(path));
         assert!(
-            result.iter().all(|p| !p.to_string_lossy().contains("\"\"")
-                && !p.to_string_lossy().is_empty()),
+            result
+                .iter()
+                .all(|p| !p.to_string_lossy().contains("\"\"") && !p.to_string_lossy().is_empty()),
             "空 JAVA_HOME 字符串应被忽略,不产生空路径条目"
         );
     }
@@ -622,7 +639,10 @@ OpenJDK 64-Bit Server VM (build 25.412-b08, mixed mode)
         let result = read_required_major_from_version_json("definitely-not-a-real-version-id");
         assert!(result.is_err());
         let msg = result.unwrap_err();
-        assert!(msg.contains("未找到") || msg.contains("版本"), "err 应说明问题: {msg}");
+        assert!(
+            msg.contains("未找到") || msg.contains("版本"),
+            "err 应说明问题: {msg}"
+        );
     }
 
     /// L5 测试 19:`read_required_major_from_version_json` 拒绝路径穿越
@@ -652,7 +672,11 @@ OpenJDK 64-Bit Server VM (build 25.412-b08, mixed mode)
             .join("versions")
             .join("26.2")
             .join("26.2.json");
-        assert!(version_json.is_file(), "26.2.json 应当在: {}", version_json.display());
+        assert!(
+            version_json.is_file(),
+            "26.2.json 应当在: {}",
+            version_json.display()
+        );
 
         // 1) 单独验证 read_required_major 解析正确
         let required = read_required_major_from_version_json("26.2");
@@ -669,21 +693,26 @@ OpenJDK 64-Bit Server VM (build 25.412-b08, mixed mode)
 
         // 2) 端到端:直接构造候选路径 + 探活(模拟 scan 流程)
         let _ = rt; // tokio runtime 准备好以备扩展
-        // 复用 probe_candidates 异步入口(它不需要 version_id)
-        // 跳过完整 scan 命令(依赖 game_dir),直接调底层
+                    // 复用 probe_candidates 异步入口(它不需要 version_id)
+                    // 跳过完整 scan 命令(依赖 game_dir),直接调底层
         let paths: Vec<(PathBuf, JavaSource)> = discover_from_env()
             .into_iter()
             .map(|p| (p, JavaSource::Path))
-            .chain(discover_from_common_dirs().into_iter().map(|p| (p, JavaSource::CommonDir)))
-            .chain(discover_from_registry().into_iter().map(|p| (p, JavaSource::Registry)))
+            .chain(
+                discover_from_common_dirs()
+                    .into_iter()
+                    .map(|p| (p, JavaSource::CommonDir)),
+            )
+            .chain(
+                discover_from_registry()
+                    .into_iter()
+                    .map(|p| (p, JavaSource::Registry)),
+            )
             .collect();
         let candidates = rt.block_on(probe_candidates(paths));
         println!("found {} probed candidates:", candidates.len());
         for c in &candidates {
-            println!(
-                "  v{} source={:?} path={}",
-                c.version, c.source, c.path
-            );
+            println!("  v{} source={:?} path={}", c.version, c.source, c.path);
         }
         assert!(!candidates.is_empty(), "应当至少发现 1 个 Java");
         assert!(

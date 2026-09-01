@@ -106,7 +106,11 @@ fn asset_object_path(objects_dir: &Path, hash: &str) -> PathBuf {
 
 /// Mojang 资源 CDN 按 hash 取文件:hash 前两位当目录,完整 hash 当文件名
 fn asset_download_url(hash: &str) -> String {
-    format!("https://resources.download.minecraft.net/{}/{}", &hash[..2], hash)
+    format!(
+        "https://resources.download.minecraft.net/{}/{}",
+        &hash[..2],
+        hash
+    )
 }
 
 /// 遍历清单:本地已存在的跳过,缺失的返回待下载列表
@@ -142,7 +146,9 @@ fn library_allowed(rules: &[LibraryRule], os_name: &str) -> bool {
 
 /// L4:native 识别——名字最后一个冒号段以 natives- 开头即原生库包
 fn is_native_library(name: &str) -> bool {
-    name.rsplit(':').next().is_some_and(|c| c.starts_with("natives-"))
+    name.rsplit(':')
+        .next()
+        .is_some_and(|c| c.starts_with("natives-"))
 }
 
 /// L4:zip 条目路径的安全化——拒绝绝对路径、反斜杠、空段与 .. 逃逸,保证解压不越出 natives 目录
@@ -188,8 +194,8 @@ fn extract_natives(
 ) -> Result<usize, String> {
     use std::io::Read;
 
-    let mut archive =
-        zip::ZipArchive::new(std::io::Cursor::new(jar_bytes)).map_err(|e| format!("打开原生库 {lib_name} 失败: {e}"))?;
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(jar_bytes))
+        .map_err(|e| format!("打开原生库 {lib_name} 失败: {e}"))?;
     let mut count = 0;
     for i in 0..archive.len() {
         let mut file = archive
@@ -204,8 +210,12 @@ fn extract_natives(
         let mut buf = Vec::with_capacity(file.size() as usize);
         file.read_to_end(&mut buf)
             .map_err(|e| format!("解压 {entry} 失败: {e}"))?;
-        std::fs::create_dir_all(target.parent().ok_or_else(|| "解压目标缺少父目录".to_string())?)
-            .map_err(|e| format!("创建目录失败: {e}"))?;
+        std::fs::create_dir_all(
+            target
+                .parent()
+                .ok_or_else(|| "解压目标缺少父目录".to_string())?,
+        )
+        .map_err(|e| format!("创建目录失败: {e}"))?;
         std::fs::write(&target, &buf).map_err(|e| format!("写入 {entry} 失败: {e}"))?;
         count += 1;
     }
@@ -369,9 +379,12 @@ pub async fn download_version_assets(version_id: String) -> Result<AssetsSummary
     tokio::fs::create_dir_all(&indexes_dir)
         .await
         .map_err(|e| format!("创建目录失败: {e}"))?;
-    tokio::fs::write(indexes_dir.join(format!("{}.json", asset_index.id)), &index_bytes)
-        .await
-        .map_err(|e| format!("写入资源清单失败: {e}"))?;
+    tokio::fs::write(
+        indexes_dir.join(format!("{}.json", asset_index.id)),
+        &index_bytes,
+    )
+    .await
+    .map_err(|e| format!("写入资源清单失败: {e}"))?;
 
     // 3. 解析清单,区分"已有"和"缺失"
     let index: AssetIndex =
@@ -409,7 +422,8 @@ pub async fn download_version_assets(version_id: String) -> Result<AssetsSummary
                 }
                 let path = asset_object_path(&objects_dir, &hash);
                 tokio::fs::create_dir_all(
-                    path.parent().ok_or_else(|| "对象路径缺少父目录".to_string())?,
+                    path.parent()
+                        .ok_or_else(|| "对象路径缺少父目录".to_string())?,
                 )
                 .await
                 .map_err(|e| format!("创建目录失败: {e}"))?;
@@ -476,7 +490,10 @@ pub async fn download_version_libraries(version_id: String) -> Result<LibrariesS
 
     // 3. 遍历清单:已存在的跳过,缺失的进入待下载列表;同时收集 natives 包
     let libs_dir = game_dir().join("libraries");
-    let natives_dir = game_dir().join("versions").join(&version_id).join("natives");
+    let natives_dir = game_dir()
+        .join("versions")
+        .join(&version_id)
+        .join("natives");
     let mut missing: Vec<&Library> = Vec::new();
     let mut skipped = 0usize;
     for lib in &required {
@@ -523,7 +540,9 @@ pub async fn download_version_libraries(version_id: String) -> Result<LibrariesS
                 let target = safe_entry_path(&libs_dir, &artifact.path)
                     .ok_or_else(|| format!("库路径非法: {}", artifact.path))?;
                 tokio::fs::create_dir_all(
-                    target.parent().ok_or_else(|| "库路径缺少父目录".to_string())?,
+                    target
+                        .parent()
+                        .ok_or_else(|| "库路径缺少父目录".to_string())?,
                 )
                 .await
                 .map_err(|e| format!("创建目录失败: {e}"))?;
@@ -589,8 +608,14 @@ mod tests {
     fn verify_sha1_accepts_match_and_rejects_mismatch() {
         let bytes = b"abc";
         // 大小写不敏感也能匹配
-        assert!(verify_sha1(bytes, "A9993E364706816ABA3E25717850C26C9CD0D89D"));
-        assert!(!verify_sha1(bytes, "0000000000000000000000000000000000000000"));
+        assert!(verify_sha1(
+            bytes,
+            "A9993E364706816ABA3E25717850C26C9CD0D89D"
+        ));
+        assert!(!verify_sha1(
+            bytes,
+            "0000000000000000000000000000000000000000"
+        ));
     }
 
     /// 模拟真实 26.2.json 里 downloads.client 的形状
@@ -651,7 +676,9 @@ mod tests {
         let hash = "773791767c043b4f9493b50c54257619cecb08a4";
         assert_eq!(
             asset_object_path(&dir, hash),
-            PathBuf::from("/game/.bamcl-dev/assets/objects/77/773791767c043b4f9493b50c54257619cecb08a4")
+            PathBuf::from(
+                "/game/.bamcl-dev/assets/objects/77/773791767c043b4f9493b50c54257619cecb08a4"
+            )
         );
     }
 
@@ -682,11 +709,15 @@ mod tests {
         let mut objects = HashMap::new();
         objects.insert(
             "icons/icon_a.png".to_string(),
-            AssetObject { hash: hash_existing.to_string() },
+            AssetObject {
+                hash: hash_existing.to_string(),
+            },
         );
         objects.insert(
             "icons/icon_b.png".to_string(),
-            AssetObject { hash: hash_missing.to_string() },
+            AssetObject {
+                hash: hash_missing.to_string(),
+            },
         );
 
         let (missing, skipped) = classify_objects(&objects, &objects_dir);
@@ -708,7 +739,9 @@ mod tests {
     fn rule_allow_only_matching_os() {
         let rules = vec![LibraryRule {
             action: "allow".into(),
-            os: Some(LibraryRuleOs { name: "windows".into() }),
+            os: Some(LibraryRuleOs {
+                name: "windows".into(),
+            }),
         }];
         assert!(library_allowed(&rules, "windows"));
         assert!(!library_allowed(&rules, "linux"));
@@ -720,11 +753,15 @@ mod tests {
         let rules = vec![
             LibraryRule {
                 action: "allow".into(),
-                os: Some(LibraryRuleOs { name: "windows".into() }),
+                os: Some(LibraryRuleOs {
+                    name: "windows".into(),
+                }),
             },
             LibraryRule {
                 action: "disallow".into(),
-                os: Some(LibraryRuleOs { name: "windows".into() }),
+                os: Some(LibraryRuleOs {
+                    name: "windows".into(),
+                }),
             },
         ];
         assert!(!library_allowed(&rules, "windows"));
@@ -733,7 +770,9 @@ mod tests {
     /// L4:native 识别——名字含 natives-windows 标记(26.2 实测形状)
     #[test]
     fn recognizes_native_library() {
-        assert!(is_native_library("org.lwjgl:lwjgl-glfw:3.4.1:natives-windows"));
+        assert!(is_native_library(
+            "org.lwjgl:lwjgl-glfw:3.4.1:natives-windows"
+        ));
         assert!(!is_native_library("org.lwjgl:lwjgl-glfw:3.4.1"));
     }
 
@@ -768,7 +807,10 @@ mod tests {
         let entry = "windows/x64/org/lwjgl/lwjgl.dll";
         assert!(entry_allowed_for_arch(entry, "x64"));
         assert!(!entry_allowed_for_arch(entry, "arm64"));
-        assert!(!entry_allowed_for_arch("windows/arm64/org/lwjgl/lwjgl.dll", "x64"));
+        assert!(!entry_allowed_for_arch(
+            "windows/arm64/org/lwjgl/lwjgl.dll",
+            "x64"
+        ));
     }
 
     /// L4:胖 jar 裁剪——平铺 jar(如 jtracy,无架构目录)原样保留

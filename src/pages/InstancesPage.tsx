@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback } from 'react';
 import {
   Alert as ChakraAlert,
   AlertIcon,
@@ -10,13 +10,9 @@ import {
   Spinner,
   Text,
   VStack,
-} from "@chakra-ui/react";
-import { RepeatIcon, DeleteIcon } from "@chakra-ui/icons";
-import {
-  listInstances,
-  killRunningInstance,
-  type RunningInstance,
-} from "../lib/tauri";
+} from '@chakra-ui/react';
+import { RepeatIcon, DeleteIcon } from '@chakra-ui/icons';
+import { listInstances, killRunningInstance, type RunningInstance } from '../lib/tauri';
 
 /** L8:运行实例列表页 — 列出 spawn 出去的 MC 进程, 可杀 */
 export default function InstancesPage() {
@@ -154,7 +150,7 @@ function InstanceRow({
           {instance.java_path}
         </Text>
         <Text fontSize="xs" color="gray.400" mt={1}>
-          启动于 {started.toLocaleString("zh-CN")} · 已运行 {elapsedMin} 分钟
+          启动于 {started.toLocaleString('zh-CN')} · 已运行 {elapsedMin} 分钟
         </Text>
       </Box>
       <Button

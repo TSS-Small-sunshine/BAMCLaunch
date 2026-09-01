@@ -7,7 +7,7 @@ body,
 
 body {
   margin: 0;
-  font-family: "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+  font-family: 'Noto Sans SC', 'Microsoft YaHei', system-ui, sans-serif;
   background: linear-gradient(180deg, #eaf4ff 0%, #f6faff 45%, #ffffff 100%);
   color: #2d3748;
   user-select: none; /* 桌面应用惯例:避免误选中文字 */

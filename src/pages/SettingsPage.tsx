@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState } from 'react';
 import {
   Alert as ChakraAlert,
   AlertIcon,
@@ -16,10 +16,10 @@ import {
   Text,
   Tooltip,
   VStack,
-} from "@chakra-ui/react";
-import { RepeatIcon, CheckIcon } from "@chakra-ui/icons";
-import { loadSettings, saveSettings, type Settings } from "../lib/tauri";
-import { scanJavaInstallations, type JavaCandidate } from "../lib/tauri";
+} from '@chakra-ui/react';
+import { RepeatIcon, CheckIcon } from '@chakra-ui/icons';
+import { loadSettings, saveSettings, type Settings } from '../lib/tauri';
+import { scanJavaInstallations, type JavaCandidate } from '../lib/tauri';
 
 /** L7 设置页 —— Java 路径 / 内存 / 游戏目录 */
 export default function SettingsPage() {
@@ -59,7 +59,7 @@ export default function SettingsPage() {
       <Box maxW="720px" mx="auto">
         <ChakraAlert status="error" borderRadius="card">
           <AlertIcon />
-          {error ?? "设置未加载"}
+          {error ?? '设置未加载'}
         </ChakraAlert>
       </Box>
     );
@@ -96,7 +96,7 @@ export default function SettingsPage() {
   const handleRescanJava = async () => {
     // 触发 L5 扫描拿候选(用随便一个版本 id;只为扫描,结果不写 version.json)
     try {
-      const result = await scanJavaInstallations("__settings_scan__");
+      const result = await scanJavaInstallations('__settings_scan__');
       setCandidates(result.candidates);
     } catch (e) {
       setError(`扫描 Java 失败: ${String(e)}`);
@@ -132,7 +132,14 @@ export default function SettingsPage() {
 
       <VStack spacing={6} align="stretch">
         {/* Java 路径 */}
-        <Box bg="white" borderRadius="card" border="1px solid" borderColor="brand.100" boxShadow="card" p={5}>
+        <Box
+          bg="white"
+          borderRadius="card"
+          border="1px solid"
+          borderColor="brand.100"
+          boxShadow="card"
+          p={5}
+        >
           <Heading size="sm" mb={3} color="gray.700">
             Java 路径
           </Heading>
@@ -141,7 +148,7 @@ export default function SettingsPage() {
           </Text>
           <HStack spacing={2}>
             <Input
-              value={settings.java.path ?? ""}
+              value={settings.java.path ?? ''}
               onChange={(e) =>
                 setSettings({
                   ...settings,
@@ -187,11 +194,15 @@ export default function SettingsPage() {
                     fontSize="xs"
                     cursor="pointer"
                     onClick={() => handlePickCandidate(c)}
-                    _hover={{ bg: "gray.100" }}
+                    _hover={{ bg: 'gray.100' }}
                     p={1.5}
                     borderRadius="sm"
                   >
-                    <Text fontWeight="700" color={c.meets_requirement ? "grass.600" : "gray.500"} minW="32px">
+                    <Text
+                      fontWeight="700"
+                      color={c.meets_requirement ? 'grass.600' : 'gray.500'}
+                      minW="32px"
+                    >
                       v{c.version}
                     </Text>
                     <Text flex={1} fontFamily="mono" color="gray.600" noOfLines={1}>
@@ -205,7 +216,14 @@ export default function SettingsPage() {
         </Box>
 
         {/* JVM 内存 */}
-        <Box bg="white" borderRadius="card" border="1px solid" borderColor="brand.100" boxShadow="card" p={5}>
+        <Box
+          bg="white"
+          borderRadius="card"
+          border="1px solid"
+          borderColor="brand.100"
+          boxShadow="card"
+          p={5}
+        >
           <Heading size="sm" mb={3} color="gray.700">
             JVM 内存
           </Heading>
@@ -220,10 +238,12 @@ export default function SettingsPage() {
               <NumberInput
                 size="sm"
                 min={256}
-                max={32 *1024}
+                max={32 * 1024}
                 step={256}
                 value={settings.jvm.min_memory_mb}
-                onChange={(_, v) => setSettings({ ...settings, jvm: { ...settings.jvm, min_memory_mb: v } })}
+                onChange={(_, v) =>
+                  setSettings({ ...settings, jvm: { ...settings.jvm, min_memory_mb: v } })
+                }
                 maxW="120px"
               >
                 <NumberInputField />
@@ -240,10 +260,12 @@ export default function SettingsPage() {
               <NumberInput
                 size="sm"
                 min={256}
-                max={32 *1024}
+                max={32 * 1024}
                 step={256}
                 value={settings.jvm.max_memory_mb}
-                onChange={(_, v) => setSettings({ ...settings, jvm: { ...settings.jvm, max_memory_mb: v } })}
+                onChange={(_, v) =>
+                  setSettings({ ...settings, jvm: { ...settings.jvm, max_memory_mb: v } })
+                }
                 maxW="120px"
               >
                 <NumberInputField />
@@ -257,7 +279,14 @@ export default function SettingsPage() {
         </Box>
 
         {/* 游戏目录 */}
-        <Box bg="white" borderRadius="card" border="1px solid" borderColor="brand.100" boxShadow="card" p={5}>
+        <Box
+          bg="white"
+          borderRadius="card"
+          border="1px solid"
+          borderColor="brand.100"
+          boxShadow="card"
+          p={5}
+        >
           <Heading size="sm" mb={3} color="gray.700">
             游戏目录
           </Heading>
@@ -266,10 +295,8 @@ export default function SettingsPage() {
           </Text>
           <HStack spacing={2}>
             <Input
-              value={settings.game_dir ?? ""}
-              onChange={(e) =>
-                setSettings({ ...settings, game_dir: e.target.value || undefined })
-              }
+              value={settings.game_dir ?? ''}
+              onChange={(e) => setSettings({ ...settings, game_dir: e.target.value || undefined })}
               placeholder="留空 = 便携模式(可执行文件旁 .bamcl-dev)"
               fontFamily="mono"
               fontSize="sm"

@@ -44,11 +44,10 @@ impl RunningInstances {
     pub fn save(&self) -> Result<(), String> {
         let path = running_file_path();
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("创建实例目录失败: {e}"))?;
+            std::fs::create_dir_all(parent).map_err(|e| format!("创建实例目录失败: {e}"))?;
         }
-        let json = serde_json::to_string_pretty(self)
-            .map_err(|e| format!("序列化实例列表失败: {e}"))?;
+        let json =
+            serde_json::to_string_pretty(self).map_err(|e| format!("序列化实例列表失败: {e}"))?;
         let tmp_path = path.with_extension("json.tmp");
         std::fs::write(&tmp_path, json).map_err(|e| format!("写入临时实例文件失败: {e}"))?;
         std::fs::rename(&tmp_path, &path).map_err(|e| format!("提交实例文件失败: {e}"))?;
@@ -201,7 +200,10 @@ pub fn list_instances() -> Vec<RunningInstance> {
 #[tauri::command]
 pub async fn kill_running_instance(pid: u32) -> Result<KillResult, String> {
     let result = kill_instance(pid).await?;
-    if matches!(result, KillResult::ForceKilled | KillResult::TerminatedBySigterm | KillResult::AlreadyGone) {
+    if matches!(
+        result,
+        KillResult::ForceKilled | KillResult::TerminatedBySigterm | KillResult::AlreadyGone
+    ) {
         let mut r = RunningInstances::load();
         r.remove(pid);
         let _ = r.save();

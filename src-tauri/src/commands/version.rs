@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 use super::http_client;
 
 /// Mojang 官方版本清单(version manifest v2)—— 所有启动器的版本列表都来自这里
-const VERSION_MANIFEST_URL: &str = "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json";
+const VERSION_MANIFEST_URL: &str =
+    "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]

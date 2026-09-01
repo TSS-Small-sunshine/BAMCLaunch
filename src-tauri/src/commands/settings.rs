@@ -80,11 +80,10 @@ impl Settings {
     pub fn save(&self) -> Result<(), String> {
         let path = settings_file_path();
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("创建设置目录失败: {e}"))?;
+            std::fs::create_dir_all(parent).map_err(|e| format!("创建设置目录失败: {e}"))?;
         }
-        let json = serde_json::to_string_pretty(self)
-            .map_err(|e| format!("序列化设置失败: {e}"))?;
+        let json =
+            serde_json::to_string_pretty(self).map_err(|e| format!("序列化设置失败: {e}"))?;
         let tmp_path = path.with_extension("json.tmp");
         std::fs::write(&tmp_path, json).map_err(|e| format!("写入临时设置文件失败: {e}"))?;
         std::fs::rename(&tmp_path, &path).map_err(|e| format!("提交设置文件失败: {e}"))?;
@@ -258,10 +257,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn validate_java_path_accepts_existing_file() {
-        let tmp = std::env::temp_dir().join(format!(
-            "bamcl-java-{0}-{0}",
-            std::process::id()
-        ));
+        let tmp = std::env::temp_dir().join(format!("bamcl-java-{0}-{0}", std::process::id()));
         std::fs::write(&tmp, b"fake").unwrap();
         let result = validate_java_path(&tmp.to_string_lossy());
         assert!(result.is_ok());
@@ -294,7 +290,10 @@ mod tests {
         // 失败
         assert!(validate_jvm_memory(0, 1024).is_err(), "min=0 拒绝");
         assert!(validate_jvm_memory(2048, 1024).is_err(), "max<min 拒绝");
-        assert!(validate_jvm_memory(1024, 32769 + 1).is_err(), "超过 32GB 拒绝");
+        assert!(
+            validate_jvm_memory(1024, 32769 + 1).is_err(),
+            "超过 32GB 拒绝"
+        );
     }
 
     /// L7 测试 14:`Settings::effective_game_dir` — None 用默认,Some 用 override
