@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Alert as ChakraAlert,
   AlertIcon,
@@ -12,12 +12,20 @@ import {
   Input,
   Text,
   VStack,
+  useDisclosure,
 } from '@chakra-ui/react';
 import { AddIcon, CheckCircleIcon, DeleteIcon, RepeatIcon } from '@chakra-ui/icons';
-import { addOfflineAccount, listAccounts, removeAccount, setActiveAccount } from '../lib/tauri';
-import type { Account, OfflineAccount } from '../types/account';
+import {
+  addOfflineAccount,
+  getActiveAccount,
+  listAccounts,
+  removeAccount,
+  setActiveAccount,
+} from '../lib/tauri';
+import type { Account } from '../types/account';
+import MicrosoftLoginDialog from './MicrosoftLoginDialog';
 
-/** M3 / L1:账户管理页 —— 离线账户的增删 + 切换当前账户 */
+/** M3:账户管理页 —— 离线账户的增删 + 微软 OAuth 登录 + 切换当前账户 */
 export default function AccountsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -27,6 +35,7 @@ export default function AccountsPage() {
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
   const [switching, setSwitching] = useState<string | null>(null);
+  const loginDisclosure = useDisclosure();
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -34,6 +43,9 @@ export default function AccountsPage() {
     try {
       const list = await listAccounts();
       setAccounts(list);
+      // L2 补 L1 漏的:启动时从 active_account.json 读当前 active
+      const active = await getActiveAccount();
+      setActiveId(active?.id ?? null);
     } catch (e) {
       setError(`加载账户失败: ${String(e)}`);
     } finally {
@@ -88,10 +100,17 @@ export default function AccountsPage() {
     }
   };
 
-  const offlineAccounts = useMemo(
-    () => accounts.filter((a): a is OfflineAccount => a.type === 'offline'),
-    [accounts]
-  );
+  const handleMicrosoftSuccess = async (accountId: string) => {
+    // 后端 save_microsoft_account 已经自动设 active;但 reload 之前
+    // 先显式 setActiveAccount 兜底,再 reload 拉新数据
+    try {
+      await setActiveAccount(accountId);
+    } catch (e) {
+      setError(`设为当前账户失败: ${String(e)}`);
+    }
+    loginDisclosure.onClose();
+    await reload();
+  };
 
   return (
     <Box maxW="720px" mx="auto">
@@ -101,18 +120,28 @@ export default function AccountsPage() {
             账户管理
           </Heading>
           <Text fontSize="sm" color="gray.500">
-            离线模式(无正版验证)· 微软账户登录将在 M3 L2 实装
+            登录后自动设为当前账户
           </Text>
         </Box>
-        <Button
-          size="sm"
-          variant="ghost"
-          leftIcon={<RepeatIcon />}
-          onClick={() => void reload()}
-          isLoading={loading}
-        >
-          刷新
-        </Button>
+        <HStack>
+          <Button
+            size="sm"
+            variant="ghost"
+            leftIcon={<RepeatIcon />}
+            onClick={() => void reload()}
+            isLoading={loading}
+          >
+            刷新
+          </Button>
+          <Button
+            size="sm"
+            colorScheme="brand"
+            leftIcon={<AddIcon />}
+            onClick={loginDisclosure.onOpen}
+          >
+            用微软账号登录
+          </Button>
+        </HStack>
       </Flex>
 
       {error && (
@@ -122,7 +151,7 @@ export default function AccountsPage() {
         </ChakraAlert>
       )}
 
-      {/* 添加账户输入条 */}
+      {/* 添加离线账户输入条 */}
       <Box
         bg="white"
         borderRadius="card"
@@ -164,13 +193,13 @@ export default function AccountsPage() {
       </Box>
 
       {/* 账户列表 */}
-      {loading && offlineAccounts.length === 0 ? (
+      {loading && accounts.length === 0 ? (
         <Flex justify="center" py={10}>
           <Text color="gray.500" fontSize="sm">
             加载中...
           </Text>
         </Flex>
-      ) : offlineAccounts.length === 0 ? (
+      ) : accounts.length === 0 ? (
         <ChakraAlert status="info" borderRadius="card" bg="blue.50">
           <AlertIcon />
           <Box>
@@ -178,13 +207,13 @@ export default function AccountsPage() {
               还没有任何账户
             </Text>
             <Text fontSize="xs" color="blue.600" mt={1}>
-              在上方输入用户名,点「添加」创建一个离线账户
+              点「用微软账号登录」登录正版账号,或在下方输入用户名创建离线账户
             </Text>
           </Box>
         </ChakraAlert>
       ) : (
         <VStack spacing={2.5} align="stretch">
-          {offlineAccounts.map((acc) => (
+          {accounts.map((acc) => (
             <AccountRow
               key={acc.id}
               account={acc}
@@ -197,6 +226,12 @@ export default function AccountsPage() {
           ))}
         </VStack>
       )}
+
+      <MicrosoftLoginDialog
+        isOpen={loginDisclosure.isOpen}
+        onClose={loginDisclosure.onClose}
+        onSuccess={handleMicrosoftSuccess}
+      />
     </Box>
   );
 }
@@ -209,21 +244,33 @@ function AccountRow({
   onRemove,
   removing,
 }: {
-  account: OfflineAccount;
+  account: Account;
   isActive: boolean;
   onActivate: () => void;
   activating: boolean;
-  onRemove: () => void;
   removing: boolean;
+  onRemove: () => void;
 }) {
-  const created = new Date(account.created_at);
-  const createdStr = created.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const isMicrosoft = account.type === 'microsoft';
+  // 微软账户显示 Token 到期时间;离线账户显示创建时间
+  const dateStr = isMicrosoft
+    ? new Date(account.expires_at).toLocaleString('zh-CN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : new Date(account.created_at).toLocaleString('zh-CN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+  const dateLabel = isMicrosoft ? 'Token 到期' : '创建于';
+  // 微软账户显示 Minecraft UUID(无连字符);离线账户显示派生 UUID
+  const uuidLabel = isMicrosoft ? account.uuid.replace(/-/g, '') : account.id;
   return (
     <Flex
       align="center"
@@ -237,7 +284,18 @@ function AccountRow({
       py={3.5}
       transition="all 0.15s"
     >
-      <Avatar size="sm" name={account.username} bg="brand.100" color="brand.600" fontWeight="800" />
+      <Avatar
+        size="sm"
+        name={account.username}
+        src={
+          isMicrosoft
+            ? `https://crafatar.com/avatars/${account.uuid.replace(/-/g, '')}?size=64&overlay`
+            : undefined
+        }
+        bg="brand.100"
+        color="brand.600"
+        fontWeight="800"
+      />
       <Box flex={1} minW={0}>
         <HStack spacing={2}>
           <Text fontWeight="800" fontSize="md" color="gray.800" noOfLines={1}>
@@ -250,6 +308,10 @@ function AccountRow({
                 <Text>当前</Text>
               </HStack>
             </Badge>
+          ) : isMicrosoft ? (
+            <Badge colorScheme="blue" variant="subtle">
+              微软
+            </Badge>
           ) : (
             <Badge colorScheme="gray" variant="subtle">
               离线
@@ -257,10 +319,10 @@ function AccountRow({
           )}
         </HStack>
         <Text fontSize="xs" color="gray.400" mt={0.5} fontFamily="mono" noOfLines={1}>
-          UUID {account.id}
+          UUID {uuidLabel}
         </Text>
         <Text fontSize="xs" color="gray.500" mt={0.5}>
-          创建于 {createdStr}
+          {dateLabel} {dateStr}
         </Text>
       </Box>
       {!isActive && (
