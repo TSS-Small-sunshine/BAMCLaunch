@@ -130,11 +130,11 @@ Account (enum,serde tag = "type")
 | 4 | `remove_account(account_id: Uuid) -> Result<(), String>` | 删除账户(若是 active 一并清空) |
 | 5 | `set_active_account(account_id: Uuid) -> Result<(), String>` | 切换当前账户(写回 active_account_id) |
 | 6 | `start_microsoft_login() -> Result<DeviceCodeResponse, String>` | 调 device code 端点,返回 user_code / verification_uri / expires_in / interval |
-| 7 | `poll_microsoft_login(device_code: String) -> Result<LoginStatus, String>` | 轮询 token 端点;`LoginStatus = Pending \| Success(Account) \| Declined \| Expired \| Failed(String)` |
-| 8 | `refresh_microsoft_token(account_id: Uuid) -> Result<Account, String>` | 主动刷新 + 回写;5 分钟节流 |
-| 9 | `get_account_skin_url(uuid: String) -> String` | 返回 crafatar URL(UUID 无连字符格式需先剥) |
+| 7 | `poll_microsoft_login(device_code: String) -> Result<LoginResult, String>` | 轮询 token 端点;`LoginResult` 包装 `LoginStatus`(枚举:`Pending \| Success \| Declined \| Expired \| Failed(String)`)+ `Option<Account>`(Success 时承载账户,其余为 None) |
+| 8 | `refresh_microsoft_token(account_id: Uuid) -> Result<(), String>` | 主动刷新 + 后端原子写盘(直接回写 `accounts.json`);5 分钟节流;前端通过 `list_accounts` reload 拿新账户 |
+| 9 | `get_account_skin_url(uuid: Uuid) -> Result<String, String>` | 返回 crafatar URL(`uuid.simple()` 直接派生无连字符格式;Tauri 边界自动把入参转为 `Uuid`) |
 
-累计命令数:M1(1) + M2(11) + M3(9) = **21 个**,在 `src-tauri/src/lib.rs:7-19` 的 `tauri::generate_handler!` 块追加注册。
+累计命令数:M1(1) + M2(10) + M3(9) = **20 个**,在 `src-tauri/src/lib.rs:7-29` 的 `tauri::generate_handler!` 块追加注册。
 
 ### 4.8 与 launch.rs 的衔接
 
