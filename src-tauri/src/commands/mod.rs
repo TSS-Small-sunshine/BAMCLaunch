@@ -3,6 +3,7 @@ pub mod download;
 pub mod instances;
 pub mod java;
 pub mod launch;
+pub mod microsoft_auth;
 pub mod settings;
 pub mod version;
 
