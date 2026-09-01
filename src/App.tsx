@@ -1,11 +1,12 @@
-import { Box, Flex } from "@chakra-ui/react";
-import { Routes, Route } from "react-router-dom";
-import TitleBar from "./components/TitleBar";
-import Sidebar from "./components/Sidebar";
-import HomePage from "./pages/HomePage";
-import InstancesPage from "./pages/InstancesPage";
-import PlaceholderPage from "./pages/PlaceholderPage";
-import SettingsPage from "./pages/SettingsPage";
+import { Box, Flex } from '@chakra-ui/react';
+import { Routes, Route } from 'react-router-dom';
+import TitleBar from './components/TitleBar';
+import Sidebar from './components/Sidebar';
+import HomePage from './pages/HomePage';
+import InstancesPage from './pages/InstancesPage';
+import PlaceholderPage from './pages/PlaceholderPage';
+import SettingsPage from './pages/SettingsPage';
+import AccountsPage from './pages/AccountsPage';
 
 /** 应用外壳:标题栏 + 侧边导航 + 路由内容区 */
 export default function App() {
@@ -18,7 +19,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/download" element={<PlaceholderPage kind="download" />} />
-            <Route path="/accounts" element={<PlaceholderPage kind="accounts" />} />
+            <Route path="/accounts" element={<AccountsPage />} />
             <Route path="/instances" element={<InstancesPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>
