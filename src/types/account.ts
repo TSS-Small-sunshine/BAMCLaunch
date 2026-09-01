@@ -19,7 +19,7 @@ export interface OfflineAccount {
   created_at: string;
 }
 
-/** M3:微软账户(L1 占位,L2 才会实装) */
+/** M3:微软账户(L1 占位,L2 实装) */
 export interface MicrosoftAccount {
   type: 'microsoft';
   id: string;
@@ -28,6 +28,8 @@ export interface MicrosoftAccount {
   access_token: string;
   refresh_token: string;
   expires_at: string;
+  /** Xbox User ID —— spec §4.1,launch 注入 `auth_xuid` 需要 */
+  xuid: string;
 }
 
 /** M3:账户联合类型(前端拿到后用 `if (acc.type === 'offline')` 收窄) */
