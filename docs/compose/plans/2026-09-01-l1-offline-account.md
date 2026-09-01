@@ -16,7 +16,7 @@
 - **提交信息必须 ASCII/英文**(PowerShell 5.1 中文会变 `?` 字节);一任务一提交。
 - git 本地身份:`TSS-Small-sunshine <small_sunshine@tssplus.top>`(仓库本地配置,已就位),顶格不动全局配置。
 - 游戏目录:沿用 M1 锚定的便携模式 `<exe_dir>/.bamcl-dev/`(`settings.rs:94-99` 决定);`accounts.json` 与 `active_account.json` 都放 `game_dir()` 根目录,与 `settings.json` 同级。
-- 命名:snake_case 后端 / camelCase 前端——由 `#[serde(rename_all = "camelCase")]`(`version.rs:9-14`)+ Tauri 参数自动转换统一处理;enum 用 `#[serde(rename_all_fields)]` 加手动 `tag = "type"` 区分 `offline` / `microsoft`。
+- 命名:snake_case 后端 / snake_case 前端(Tauri 自动转换字段名;Account 枚举无 `rename_all`,前端直接对齐后端 snake_case 字段);enum 用 `#[serde(tag = "type")]` 区分 `offline` / `microsoft`。
 - 错误约定:`Result<T, String>`,错误消息中文(对齐 `settings.rs:82-90` / `download.rs` 现有风格)。
 - **不**修改任何 M1/M2 已有 .rs 文件,只允许改:`src-tauri/src/lib.rs`(注册 4 个新命令,追加)、`src-tauri/src/commands/mod.rs`(加 `pub mod accounts;`)、`src/App.tsx`(改 1 行路由 + 1 行 import)、`src/lib/tauri.ts`(追加 4 个 wrapper)。
 - 启动游戏时"用选定账户"——L1 **不**真改 `launch.rs`(那是 L2 范围),但 `active_account.json` 必须能被任何未来的 launch 流程读取,作为 L2 启动器输入契约的"伏笔"。
@@ -716,7 +716,7 @@ Get-NetTCPConnection -LocalPort 1420 -ErrorAction SilentlyContinue | ForEach-Obj
 
 - **L1 切到这个粒度的原因**:README §6 已建议 M3 起回归简洁 spec/plans,本计划是 M3 第一课,只做"骨架"——L2 微软 OAuth、L3 token 刷新加密、L4 多账户切换动画 都可以基于现有 enum + UI 增量叠加,不在第一课堆复杂度。✓
 - **不破坏既有文件**:`settings.rs` / `version.rs` / `download.rs` / `instances.rs` / `launch.rs` / `java.rs` 零修改;`lib.rs` 只追加 4 行;`mod.rs` 加 1 行;`App.tsx` 改 1 行路由 + 1 行 import;`tauri.ts` 末尾追加 4 个 wrapper。✓
-- **复用 M2 模式**:原子写复用 `settings.rs:80-91`、degrade-to-default 复用 `settings.rs:65-77`、serde camelCase 复用 `version.rs:9-14`、前端 hook 状态机复用 `useVersionManifest.ts:6-9`、页面骨架复用 `InstancesPage.tsx:1-115`。✓
+- **复用 M2 模式**:原子写复用 `settings.rs:80-91`、degrade-to-default 复用 `settings.rs:65-77`、前端 hook 状态机复用 `useVersionManifest.ts:6-9`、页面骨架复用 `InstancesPage.tsx:1-115`。✓
 - **风险:用户名重名**——`add_offline_account` 内重名直接 `Err("账户名已存在: ...")`;L2 微软登录用 UUID 区分(`.microsoft.uuid`)。✓
 - **风险:active 引用悬空**——`remove_account` 内同步检查并清空;`set_active_account` 校验 id 在 list 中;手动重命名 accounts.json 后启动,`load_active_account` 解析失败 → None(降级)。✓
 - **契约可扩展**:`Account` enum 用 serde tag="type",L2 新增 OAuth 变体只需添加 `Microsoft(MicrosoftAccount)` 字段补全,不破坏既有 `accounts.json`;`active_account.json` 用独立文件而非 accounts.json 嵌套字段,避免反复读写整个账户列表。✓

@@ -56,7 +56,7 @@ Account (enum,serde tag = "type")
 
 - UUID 算法**复用** `launch.rs:468-477` 的 `uuid_offline_for(player_name)`,M3 只把它抽到 `commands/account.rs::mod` 供账户创建 + 启动两个调用方共用(避免双份实现)
 - 用户名规则(Mojang 协议要求):3-16 字符、`[A-Za-z0-9_]`,前后端各做一次校验(防御性,信任边界在 Rust 侧)
-- 添加时即时派生 UUID,持久化进 `accounts.json` 的 `Offline.uuid` 字段(避免每次启动都重算)
+- 添加时即时派生 UUID,持久化进 `accounts.json` 的 `Offline.id` 字段(避免每次启动都重算)
 
 ### 4.3 微软 OAuth 设备码流
 
@@ -141,7 +141,7 @@ Account (enum,serde tag = "type")
 `launch_version` 签名扩展:`launch_version(version_id, java_path, account_id: Option<Uuid>)` —— 第三个参数从 M3 起**必填**(无账户禁止启动,前端在 HomePage 顶部加「请先在『账户』页添加账户」红色 Banner)。launch.rs:294-309 的硬编码删除,改为:
 
 - `account_id == None` 或账户列表为空 → `Err("未选择账户,请先在账户页添加")`
-- `Account::Offline { username, uuid }` → `auth_player_name = username`、`auth_uuid = uuid`、`auth_access_token = ""`、`user_type = "legacy"`
+- `Account::Offline { id, username, created_at }` → `auth_player_name = username`、`auth_uuid = id`、`auth_access_token = ""`、`user_type = "legacy"`
 - `Account::Microsoft { uuid, player_name, access_token, xuid, .. }` → 先检查 `expires_at`,过期自动 `refresh_microsoft_token`;成功后用新鲜 token 填 `auth_access_token`、`user_type = "msa"`、`auth_xuid = xuid`
 
 ## [S3] Out of Scope
@@ -156,7 +156,7 @@ Account (enum,serde tag = "type")
 
 ## Tasks
 
-- [ ] T-M3-1:账户存储层(`commands/account.rs` + `<game_dir>/accounts.json`,原子写 + 降级 load) — acceptance: `cargo test` 含 4 个(JSON 往返 / 缺文件降级 / 缺字段降级 / active_account_id 不存在时清空) (covers: 4.1)
+- [ ] T-M3-1:账户存储层(`commands/account.rs` + `<game_dir>/accounts.json`,原子写 + 降级 load) — acceptance: `cargo test` 含 3 个(JSON 往返 / 缺文件降级 / 缺字段降级) (covers: 4.1)
 - [ ] T-M3-2:离线账户 add / list / remove / set_active + UUID 复用 `uuid_offline_for` — acceptance: 4 个 tauri 命令签名 + 前端 hook + 用户名校验 (covers: 4.2 / 4.7-1~5)
 - [ ] T-M3-3:微软 OAuth 设备码流(start + poll,标准 3 步 + 4 个错误码语义) — acceptance: 2 个 tauri 命令 + 单元测试模拟 4 个错误码响应 (covers: 4.3 / 4.7-6~7)
 - [ ] T-M3-4:Token 刷新(自动 + 主动,5 分钟节流,Xbox Live + XSTS + Minecraft 兑换) — acceptance: 1 个 tauri 命令 + 1 个测试(过期判定) (covers: 4.4 / 4.7-8)
