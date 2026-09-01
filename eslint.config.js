@@ -38,6 +38,7 @@ export default [
         // 浏览器 / Tauri 运行时常用全局
         window: 'readonly',
         document: 'readonly',
+        navigator: 'readonly',
         console: 'readonly',
         fetch: 'readonly',
         URL: 'readonly',
