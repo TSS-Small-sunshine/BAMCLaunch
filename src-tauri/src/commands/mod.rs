@@ -1,3 +1,4 @@
+pub mod accounts;
 pub mod download;
 pub mod instances;
 pub mod java;
