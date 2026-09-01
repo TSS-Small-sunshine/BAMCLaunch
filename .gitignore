@@ -19,6 +19,11 @@ dist-ssr
 # 本地游戏目录(dev)
 .bamcl-dev/
 
+# Debug / verifier residue (Tauri 项目不应有)
+*.py
+/.eslintrc.cjs
+/scripts/_debug-*
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
