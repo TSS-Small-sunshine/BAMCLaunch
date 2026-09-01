@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { VersionManifest } from '../types/version';
 import type { Account } from '../types/account';
+import type { DeviceCodeResponse, LoginResult } from '../types/auth';
 
 /** 调用 Rust 后端的 fetch_version_manifest 命令 */
 export function fetchVersionManifest(): Promise<VersionManifest> {
@@ -151,4 +152,29 @@ export function removeAccount(accountId: string): Promise<void> {
 /** M3 / L1:切换当前激活账户(写 active_account.json) */
 export function setActiveAccount(accountId: string): Promise<void> {
   return invoke<void>('set_active_account', { accountId });
+}
+
+/** M3 / L2:启动微软设备码流 → 返 user_code / verification_uri / interval / expires_in */
+export function startMicrosoftLogin(): Promise<DeviceCodeResponse> {
+  return invoke<DeviceCodeResponse>('start_microsoft_login');
+}
+
+/** M3 / L2:轮询 token 端点 — 内部用 setInterval 周期调用,后端按 OAuth 错误码映射 */
+export function pollMicrosoftLogin(deviceCode: string): Promise<LoginResult> {
+  return invoke<LoginResult>('poll_microsoft_login', { deviceCode });
+}
+
+/** M3 / L2:用 refresh_token 换新 access_token(launch 时按需触发,L2 不后台定时) */
+export function refreshMicrosoftToken(accountId: string): Promise<void> {
+  return invoke<void>('refresh_microsoft_token', { accountId });
+}
+
+/** M3 / L2:返回 crafatar 公开皮肤 URL(纯字符串合成,无 IO) */
+export function getAccountSkinUrl(uuid: string): Promise<string> {
+  return invoke<string>('get_account_skin_url', { uuid });
+}
+
+/** M3 / L2:补 L1 漏的 — 启动时读 active_account.json(launch 路径用) */
+export function getActiveAccount(): Promise<Account | null> {
+  return invoke<Account | null>('get_active_account');
 }
